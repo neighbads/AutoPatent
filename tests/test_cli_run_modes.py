@@ -4,17 +4,9 @@ from typer.testing import CliRunner
 from autopatent.cli import app
 
 
-class RunAwareCliRunner(CliRunner):
-    def invoke(self, command, args=None, **kwargs):
-        args = list(args or [])
-        if args and args[0] == "run":
-            args.pop(0)
-        return super().invoke(command, args, **kwargs)
-
-
 @pytest.fixture
 def runner():
-    return RunAwareCliRunner()
+    return CliRunner()
 
 
 def test_run_requires_topic_or_input_doc(runner):
