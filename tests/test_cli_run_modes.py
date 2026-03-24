@@ -13,7 +13,7 @@ def test_run_requires_topic_or_input_doc(runner):
     result = runner.invoke(app, ["run"])
 
     assert result.exit_code != 0
-    assert "需要至少一个输入" in result.stdout
+    assert "需要至少一个输入" in result.output
 
 
 def test_run_accepts_topic(runner):

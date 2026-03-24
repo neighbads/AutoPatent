@@ -7,7 +7,7 @@ name = "autopatent"
 version = "0.1.0"
 description = "AutoPatent CLI tooling"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.9"
 dependencies = [
     "typer>=0.7.0",
 ]
