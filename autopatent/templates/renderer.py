@@ -17,6 +17,7 @@ class RenderedDisclosure:
 
 
 _PLACEHOLDER_RE = re.compile(r"{{\s*([A-Za-z0-9_.]+)\s*}}")
+_ANY_PLACEHOLDER_RE = re.compile(r"{{\s*.*?\s*}}")
 _TEMPLATE_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
@@ -36,9 +37,17 @@ def _resolve_path(context: Mapping[str, Any], path: str) -> Any:
     return current
 
 
-def _render_text(template_text: str, context: Mapping[str, Any]) -> str:
+def _validate_template_syntax(template_text: str) -> None:
     if "{%" in template_text or "%}" in template_text:
         raise ValueError("Unsupported Jinja block syntax: {% ... %}")
+
+    for token in _ANY_PLACEHOLDER_RE.findall(template_text):
+        if _PLACEHOLDER_RE.fullmatch(token) is None:
+            raise ValueError(f"Unsupported placeholder syntax: {token}")
+
+
+def _render_text(template_text: str, context: Mapping[str, Any]) -> str:
+    _validate_template_syntax(template_text)
 
     def _replace(match: re.Match[str]) -> str:
         placeholder = match.group(1)
@@ -48,10 +57,7 @@ def _render_text(template_text: str, context: Mapping[str, Any]) -> str:
             raise ValueError(f"Missing required template value: {placeholder}") from exc
         return str(value)
 
-    rendered = _PLACEHOLDER_RE.sub(_replace, template_text)
-    if "{{" in rendered or "}}" in rendered:
-        raise ValueError("Unrendered placeholders remain in template output")
-    return rendered
+    return _PLACEHOLDER_RE.sub(_replace, template_text)
 
 
 def _defaults_dir() -> Path:

@@ -72,3 +72,17 @@ def test_disclosure_render_raises_on_unrendered_placeholder(monkeypatch) -> None
     }
     with pytest.raises(ValueError):
         disclosure_renderer.render_disclosure(context=context, template_name=None)
+
+
+def test_disclosure_render_allows_literal_braces_in_context_values() -> None:
+    from autopatent.templates.renderer import render_disclosure
+
+    context = {
+        "title": "Literal {{ braces }} title",
+        "technical_field": "Field",
+        "background": "Background",
+        "summary": "Summary",
+        "embodiments": "Embodiments",
+    }
+    rendered = render_disclosure(context=context, template_name="cn_invention_default")
+    assert "Literal {{ braces }} title" in rendered.markdown
