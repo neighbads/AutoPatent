@@ -35,9 +35,11 @@ class PriorArtScanStage:
             self.produces = ["prior_art_resources"]
 
     def run(self, ctx: StageContext) -> StageResult:
-        candidates = ctx.metadata.get("direction_candidates", [])
-        if candidates is not None and not isinstance(candidates, list):
-            raise ValueError("ctx.metadata['direction_candidates'] must be a list if present")
+        if "direction_candidates" not in ctx.metadata:
+            raise ValueError("Missing required input: direction_candidates")
+        candidates = ctx.metadata.get("direction_candidates")
+        if not isinstance(candidates, list):
+            raise ValueError("ctx.metadata['direction_candidates'] must be a list")
 
         resources = _stub_resources()
         ctx.metadata["prior_art_resources"] = resources
@@ -45,4 +47,3 @@ class PriorArtScanStage:
         result = StageResult(produces=list(self.produces))
         result.outputs = {"prior_art_resources": resources}
         return result
-

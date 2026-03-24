@@ -46,7 +46,7 @@ class DirectionScoringStage:
         scored: List[Dict[str, Any]] = []
         for item in raw:
             if not isinstance(item, dict):
-                continue
+                raise ValueError("direction_candidates entries must be dicts")
             c = dict(item)
             c["score"] = _score_candidate(c, prior)
             c["quality"] = "weak" if float(c["score"]) < self.weak_score_threshold else "ok"
@@ -58,4 +58,3 @@ class DirectionScoringStage:
         result = StageResult(produces=list(self.produces))
         result.outputs = {"direction_candidates_scored": scored}
         return result
-

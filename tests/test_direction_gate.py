@@ -44,7 +44,7 @@ def test_human_gate_choose_persists_decision(tmp_path, monkeypatch):
         "choose x",
         "drop",
         "merge 1",
-        "expand",
+        "expand 1 2",
         "unknown 1",
     ],
 )

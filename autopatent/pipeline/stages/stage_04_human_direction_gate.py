@@ -74,18 +74,39 @@ class HumanDirectionGateStage:
         candidates = _coerce_candidate_list(ctx)
 
         # Auto-expand weak candidates before human prompt, with a global retry cap.
-        retries = 0
-        while retries < self.auto_expand_max_retries and any(
+        auto_retries = 0
+        while auto_retries < self.auto_expand_max_retries and any(
             _is_weak(c, self.weak_score_threshold) for c in candidates
         ):
-            retries += 1
+            auto_retries += 1
             for c in candidates:
                 if _is_weak(c, self.weak_score_threshold):
-                    _expand_candidate(c, attempt=retries)
+                    _expand_candidate(c, attempt=auto_retries)
 
         # Persist the expanded candidate set back into ctx as the "current view".
         ctx.metadata["direction_candidates"] = candidates
-        ctx.metadata["direction_gate_auto_expand_retries"] = retries
+        ctx.metadata["direction_gate_auto_expand_retries"] = auto_retries
+
+        if ctx.metadata.get("non_interactive"):
+            selected = ctx.metadata.get("selected_direction_id")
+            if selected is None:
+                raise ValueError("non_interactive mode requires selected_direction_id")
+            selected_id = str(selected)
+            if not self._has_candidate(candidates, selected_id):
+                raise ValueError(f"selected_direction_id not found: {selected_id}")
+            decision = {"selected_direction_id": selected_id}
+            decision_path = _write_decision(ctx.work_dir, decision)
+            ctx.metadata["selected_direction_id"] = selected_id
+            ctx.metadata["direction_gate_decision_path"] = str(decision_path)
+            return StageResult(
+                produces=list(self.produces),
+                outputs={
+                    "selected_direction_id": selected_id,
+                    "direction_gate_decision_path": str(decision_path),
+                },
+            )
+
+        manual_retries = 0
 
         while True:
             raw = input(
@@ -104,23 +125,25 @@ class HumanDirectionGateStage:
                 ctx.metadata["selected_direction_id"] = selected
                 ctx.metadata["direction_gate_decision_path"] = str(decision_path)
 
-                result = StageResult(produces=list(self.produces))
-                result.outputs = {
+                return StageResult(
+                    produces=list(self.produces),
+                    outputs={
                     "selected_direction_id": selected,
                     "direction_gate_decision_path": str(decision_path),
-                }
-                return result
+                    },
+                )
 
             if cmd == "quit":
                 ctx.metadata["selected_direction_id"] = None
                 ctx.metadata["direction_gate_decision_path"] = None
-                result = StageResult(produces=list(self.produces))
-                result.outputs = {
+                return StageResult(
+                    produces=list(self.produces),
+                    outputs={
                     "selected_direction_id": None,
                     "direction_gate_decision_path": None,
                     "status": "quit",
-                }
-                return result
+                    },
+                )
 
             if cmd == "drop":
                 target = args[0]
@@ -133,16 +156,16 @@ class HumanDirectionGateStage:
                 if target == "all":
                     for c in candidates:
                         if _is_weak(c, self.weak_score_threshold):
-                            _expand_candidate(c, attempt=retries + 1)
-                    retries += 1
+                            _expand_candidate(c, attempt=auto_retries + manual_retries + 1)
+                    manual_retries += 1
                 else:
                     c = self._find_candidate(candidates, target)
                     if c is None:
                         continue
-                    _expand_candidate(c, attempt=retries + 1)
-                    retries += 1
+                    _expand_candidate(c, attempt=auto_retries + manual_retries + 1)
+                    manual_retries += 1
                 ctx.metadata["direction_candidates"] = candidates
-                ctx.metadata["direction_gate_manual_expand_retries"] = retries
+                ctx.metadata["direction_gate_manual_expand_retries"] = manual_retries
                 continue
 
             if cmd == "merge":
@@ -157,7 +180,7 @@ class HumanDirectionGateStage:
                 continue
 
     def _parse(self, raw: str) -> Tuple[Optional[str], List[str]]:
-        parts = [p for p in raw.strip().split(" ") if p]
+        parts = raw.strip().split()
         if not parts:
             return None, []
         cmd = parts[0].lower()
