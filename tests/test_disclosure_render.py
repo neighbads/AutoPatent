@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 
 def test_disclosure_render_populates_all_placeholders() -> None:
     from autopatent.templates.renderer import render_disclosure
@@ -20,3 +22,30 @@ def test_disclosure_render_populates_all_placeholders() -> None:
     assert "{{" not in rendered.markdown
     assert "{{" not in rendered.docx_markdown
 
+
+def test_disclosure_render_falls_back_when_template_missing() -> None:
+    from autopatent.templates.renderer import render_disclosure
+
+    context = {
+        "title": "Fallback Title",
+        "technical_field": "Field",
+        "background": "Background",
+        "summary": "Summary",
+        "embodiments": "Embodiments",
+    }
+    rendered = render_disclosure(context=context, template_name="does_not_exist")
+    assert rendered.template_name == "cn_invention_default"
+    assert "Fallback Title" in rendered.markdown
+
+
+def test_disclosure_render_raises_on_missing_placeholder_value() -> None:
+    from autopatent.templates.renderer import render_disclosure
+
+    context = {
+        "title": "Missing Field Title",
+        "technical_field": "Field",
+        "summary": "Summary",
+        "embodiments": "Embodiments",
+    }
+    with pytest.raises(ValueError):
+        render_disclosure(context=context, template_name="cn_invention_default")

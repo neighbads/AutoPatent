@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 
 def test_default_template_used_when_not_specified() -> None:
     # Import inside the test so the failure mode is explicit during the RED run.
@@ -19,3 +21,17 @@ def test_default_template_used_when_not_specified() -> None:
     assert "Example Invention Title" in rendered.markdown
     assert "Example Invention Title" in rendered.docx_markdown
 
+
+def test_invalid_template_name_rejected() -> None:
+    from autopatent.templates.renderer import render_disclosure
+
+    context = {
+        "title": "T",
+        "technical_field": "F",
+        "background": "B",
+        "summary": "S",
+        "embodiments": "E",
+    }
+
+    with pytest.raises(ValueError):
+        render_disclosure(context=context, template_name="../escape")
