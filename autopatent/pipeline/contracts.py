@@ -10,6 +10,9 @@ class StageContext:
     work_dir: Path
     metadata: dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        self.work_dir = self.work_dir.expanduser().resolve()
+
 
 @dataclass
 class StageResult:

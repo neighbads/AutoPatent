@@ -108,3 +108,11 @@ def test_deliverables_export_rejects_outside_artifacts_source(tmp_path):
     )
     with pytest.raises(ValueError):
         stage.run(ctx)
+
+
+def test_mvp_outputs_with_relative_work_dir(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    relative_work_dir = Path("relative-run")
+    run_pipeline(relative_work_dir)
+    assert (relative_work_dir / "deliverables/disclosure.md").exists()
+    assert (relative_work_dir / "deliverables/oa_response_playbook.md").exists()
