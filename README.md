@@ -2,7 +2,7 @@
 
 AutoPatent 是一个面向中国发明专利撰写流程的自动化程序。
 
-当前仓库阶段：MVP 骨架已实现（含阶段流水线、模板渲染、基础导出与测试集）。
+当前仓库阶段：MVP 骨架已实现（阶段组件与测试已落地），CLI `run` 仍处于占位执行阶段。
 
 ## 当前实现范围
 
@@ -11,15 +11,15 @@ AutoPatent 是一个面向中国发明专利撰写流程的自动化程序。
 
 ## 快速开始
 
-以下示例覆盖目前支持的运行路径：
+以下示例覆盖当前 CLI 参数形态（用于占位执行与参数校验）：
 
-1. 主题驱动（生成基础交付包）：
+1. 主题驱动：
 
 ```
 python -m autopatent.cli run --topic "示例主题" --output ./artifacts/demo
 ```
 
-2. 文档+代码触发（带 resume 恢复）：
+2. 文档+代码触发（参数形态）：
 
 ```
 python -m autopatent.cli run --input-doc ./seed.md --code-dir ./impl --resume
