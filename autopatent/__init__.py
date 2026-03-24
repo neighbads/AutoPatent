@@ -1,5 +1,3 @@
-"""AutoPatent package entry point."""
+"""AutoPatent version metadata."""
 
-from .cli import app  # expose CLI for convenience
-
-__all__ = ["app"]
+__version__ = "0.1.0"
