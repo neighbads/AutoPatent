@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from os import PathLike
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
@@ -17,10 +18,15 @@ class AutoPatentConfig:
     @classmethod
     def from_mapping(cls, payload: Optional[Mapping[str, Any]] = None) -> "AutoPatentConfig":
         raw_root = payload.get("checkpoint_root") if payload else None
-        if raw_root:
+        if raw_root is None:
+            root = Path.cwd() / "state"
+        elif isinstance(raw_root, (str, PathLike)):
             root = Path(raw_root)
         else:
-            root = Path.cwd() / "state"
+            raise ValueError(
+                "checkpoint_root must be a string or path-like, got "
+                f"{type(raw_root).__name__}"
+            )
         return cls(checkpoint_root=root.expanduser().resolve())
 
 

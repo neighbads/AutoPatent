@@ -11,15 +11,25 @@ class Checkpoint:
 
     stage_id: str
     status: str
-    recorded_at: str
+    updated_at: str
 
     def to_dict(self) -> dict[str, str]:
         return asdict(self)
 
     @classmethod
     def from_dict(cls, payload: dict[str, str]) -> "Checkpoint":
+        required_keys = ("stage_id", "status", "updated_at")
+        for key in required_keys:
+            if key not in payload:
+                raise ValueError(
+                    f"Checkpoint entry missing required key '{key}': {payload}"
+                )
+            if not isinstance(payload[key], str):
+                raise ValueError(
+                    f"Checkpoint entry key '{key}' must be a string, got {type(payload[key]).__name__}"
+                )
         return cls(
             stage_id=payload["stage_id"],
             status=payload["status"],
-            recorded_at=payload["recorded_at"],
+            updated_at=payload["updated_at"],
         )

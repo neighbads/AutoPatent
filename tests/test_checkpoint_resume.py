@@ -38,3 +38,30 @@ def test_load_config_raises_on_malformed(tmp_path):
     with pytest.raises(ValueError) as exc:
         load_config(config_path=config_path)
     assert str(config_path) in str(exc.value)
+
+
+def test_latest_raises_when_entry_missing_keys(tmp_path):
+    state = tmp_path / "state"
+    ckpt = CheckpointStore(state)
+    history_file = state / "checkpoint_history.json"
+    history_file.write_text(
+        json.dumps(
+            [
+                {
+                    "stage_id": "STAGE_06",
+                    "status": "done",
+                }
+            ]
+        )
+    )
+    with pytest.raises(ValueError) as exc:
+        ckpt.latest()
+    assert "updated_at" in str(exc.value)
+
+
+def test_load_config_rejects_checkpoint_root_type(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({"checkpoint_root": 123}))
+    with pytest.raises(ValueError) as exc:
+        load_config(config_path=config_path)
+    assert "checkpoint_root" in str(exc.value)
