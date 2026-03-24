@@ -48,7 +48,10 @@ def _render_text(template_text: str, context: Mapping[str, Any]) -> str:
             raise ValueError(f"Missing required template value: {placeholder}") from exc
         return str(value)
 
-    return _PLACEHOLDER_RE.sub(_replace, template_text)
+    rendered = _PLACEHOLDER_RE.sub(_replace, template_text)
+    if "{{" in rendered or "}}" in rendered:
+        raise ValueError("Unrendered placeholders remain in template output")
+    return rendered
 
 
 def _defaults_dir() -> Path:

@@ -21,4 +21,10 @@ test = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["autopatent"]
+include = ["autopatent*"]
+
+[tool.setuptools.package-data]
+autopatent = [
+    "templates/defaults/*.md.j2",
+    "templates/defaults/*.docx.j2.md",
+]
