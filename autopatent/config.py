@@ -15,7 +15,7 @@ class AutoPatentConfig:
     checkpoint_root: Path
 
     @classmethod
-    def from_mapping(cls, payload: Mapping[str, Any] | None) -> "AutoPatentConfig":
+    def from_mapping(cls, payload: Optional[Mapping[str, Any]] = None) -> "AutoPatentConfig":
         raw_root = payload.get("checkpoint_root") if payload else None
         if raw_root:
             root = Path(raw_root)
@@ -30,5 +30,10 @@ def load_config(config_path: Optional[Path] = None) -> AutoPatentConfig:
     candidate = Path(config_path) if config_path else Path.cwd() / "config.json"
     payload: Mapping[str, Any] = {}
     if candidate.is_file():
-        payload = json.loads(candidate.read_text())
+        try:
+            payload = json.loads(candidate.read_text())
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"Unable to parse config file at {candidate}: {exc}"
+            ) from exc
     return AutoPatentConfig.from_mapping(payload)
