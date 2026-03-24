@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
 from autopatent.pipeline import StageContext, StageResult
@@ -25,14 +25,8 @@ class PriorArtScanStage:
     """
 
     stage_id: str = "STAGE_02"
-    requires: list[str] = None  # type: ignore[assignment]
-    produces: list[str] = None  # type: ignore[assignment]
-
-    def __post_init__(self) -> None:
-        if self.requires is None:
-            self.requires = ["direction_candidates"]
-        if self.produces is None:
-            self.produces = ["prior_art_resources"]
+    requires: list[str] = field(default_factory=lambda: ["direction_candidates"])
+    produces: list[str] = field(default_factory=lambda: ["prior_art_resources"])
 
     def run(self, ctx: StageContext) -> StageResult:
         if "direction_candidates" not in ctx.metadata:

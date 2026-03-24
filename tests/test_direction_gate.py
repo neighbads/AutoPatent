@@ -37,6 +37,35 @@ def test_human_gate_choose_persists_decision(tmp_path, monkeypatch):
     assert payload["selected_direction_id"] == "2"
 
 
+def test_human_gate_drop_then_choose_updates_candidates(tmp_path, monkeypatch):
+    commands = iter(["drop 1", "choose 2"])
+    monkeypatch.setattr("builtins.input", lambda _: next(commands))
+    from autopatent.pipeline.stages.stage_04_human_direction_gate import (
+        HumanDirectionGateStage,
+    )
+
+    ctx = ctx_with_candidates(tmp_path)
+    stage = HumanDirectionGateStage()
+    result = stage.run(ctx)
+    assert result.outputs["selected_direction_id"] == "2"
+    ids = {str(c["id"]) for c in ctx.metadata["direction_candidates"]}
+    assert "1" not in ids
+
+
+def test_human_gate_non_interactive_uses_preselected(tmp_path):
+    from autopatent.pipeline.stages.stage_04_human_direction_gate import (
+        HumanDirectionGateStage,
+    )
+
+    ctx = ctx_with_candidates(tmp_path)
+    ctx.metadata["non_interactive"] = True
+    ctx.metadata["selected_direction_id"] = "2"
+    stage = HumanDirectionGateStage()
+    result = stage.run(ctx)
+    assert result.outputs["selected_direction_id"] == "2"
+    assert (tmp_path / "direction_gate_decision.json").exists()
+
+
 @pytest.mark.parametrize(
     "command",
     [

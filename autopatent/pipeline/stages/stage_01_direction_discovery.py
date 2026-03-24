@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
 from autopatent.pipeline import StageContext, StageResult
@@ -36,14 +36,8 @@ class DirectionDiscoveryStage:
     """Stage 01: Produce candidate "directions" for further scanning/scoring."""
 
     stage_id: str = "STAGE_01"
-    requires: list[str] = None  # type: ignore[assignment]
-    produces: list[str] = None  # type: ignore[assignment]
-
-    def __post_init__(self) -> None:
-        if self.requires is None:
-            self.requires = []
-        if self.produces is None:
-            self.produces = ["direction_candidates"]
+    requires: list[str] = field(default_factory=list)
+    produces: list[str] = field(default_factory=lambda: ["direction_candidates"])
 
     def run(self, ctx: StageContext) -> StageResult:
         topic = str(ctx.metadata.get("topic", "") or "")
@@ -54,4 +48,3 @@ class DirectionDiscoveryStage:
         result = StageResult(produces=list(self.produces))
         result.outputs = {"direction_candidates": ctx.metadata.get("direction_candidates")}
         return result
-

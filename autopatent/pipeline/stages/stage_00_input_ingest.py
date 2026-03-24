@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
@@ -17,14 +17,8 @@ class InputIngestStage:
     """
 
     stage_id: str = "STAGE_00"
-    requires: list[str] = None  # type: ignore[assignment]
-    produces: list[str] = None  # type: ignore[assignment]
-
-    def __post_init__(self) -> None:
-        if self.requires is None:
-            self.requires = []
-        if self.produces is None:
-            self.produces = ["topic", "input_doc"]
+    requires: list[str] = field(default_factory=list)
+    produces: list[str] = field(default_factory=lambda: ["topic", "input_doc"])
 
     def run(self, ctx: StageContext) -> StageResult:
         topic = ctx.metadata.get("topic")
@@ -40,4 +34,3 @@ class InputIngestStage:
         result = StageResult(produces=list(self.produces))
         result.outputs = {k: ctx.metadata.get(k) for k in self.produces}
         return result
-

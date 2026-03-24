@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -57,18 +57,14 @@ def _write_decision(work_dir: Path, payload: Dict[str, Any]) -> Path:
 @dataclass
 class HumanDirectionGateStage:
     stage_id: str = "STAGE_04"
-    requires: list[str] = None  # type: ignore[assignment]
-    produces: list[str] = None  # type: ignore[assignment]
+    requires: list[str] = field(default_factory=lambda: ["direction_candidates"])
+    produces: list[str] = field(
+        default_factory=lambda: ["selected_direction_id", "direction_gate_decision_path"]
+    )
 
     # Behavior knobs kept as attributes so tests can override if needed.
     weak_score_threshold: float = 0.5
     auto_expand_max_retries: int = 3
-
-    def __post_init__(self) -> None:
-        if self.requires is None:
-            self.requires = ["direction_candidates"]
-        if self.produces is None:
-            self.produces = ["selected_direction_id", "direction_gate_decision_path"]
 
     def run(self, ctx: StageContext) -> StageResult:
         candidates = _coerce_candidate_list(ctx)
@@ -87,7 +83,7 @@ class HumanDirectionGateStage:
         ctx.metadata["direction_candidates"] = candidates
         ctx.metadata["direction_gate_auto_expand_retries"] = auto_retries
 
-        if ctx.metadata.get("non_interactive"):
+        if ctx.metadata.get("non_interactive") is True:
             selected = ctx.metadata.get("selected_direction_id")
             if selected is None:
                 raise ValueError("non_interactive mode requires selected_direction_id")
@@ -128,8 +124,8 @@ class HumanDirectionGateStage:
                 return StageResult(
                     produces=list(self.produces),
                     outputs={
-                    "selected_direction_id": selected,
-                    "direction_gate_decision_path": str(decision_path),
+                        "selected_direction_id": selected,
+                        "direction_gate_decision_path": str(decision_path),
                     },
                 )
 
@@ -139,9 +135,8 @@ class HumanDirectionGateStage:
                 return StageResult(
                     produces=list(self.produces),
                     outputs={
-                    "selected_direction_id": None,
-                    "direction_gate_decision_path": None,
-                    "status": "quit",
+                        "selected_direction_id": None,
+                        "direction_gate_decision_path": None,
                     },
                 )
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
 from autopatent.pipeline import StageContext, StageResult
@@ -22,16 +22,14 @@ class DirectionScoringStage:
     """Stage 03: Score direction candidates with a simple deterministic heuristic."""
 
     stage_id: str = "STAGE_03"
-    requires: list[str] = None  # type: ignore[assignment]
-    produces: list[str] = None  # type: ignore[assignment]
+    requires: list[str] = field(
+        default_factory=lambda: ["direction_candidates", "prior_art_resources"]
+    )
+    produces: list[str] = field(
+        default_factory=lambda: ["direction_candidates", "direction_candidates_scored"]
+    )
 
     weak_score_threshold: float = 0.5
-
-    def __post_init__(self) -> None:
-        if self.requires is None:
-            self.requires = ["direction_candidates", "prior_art_resources"]
-        if self.produces is None:
-            self.produces = ["direction_candidates_scored"]
 
     def run(self, ctx: StageContext) -> StageResult:
         raw = ctx.metadata.get("direction_candidates", [])
