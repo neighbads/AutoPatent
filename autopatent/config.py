@@ -37,7 +37,7 @@ def load_config(config_path: Optional[Path] = None) -> AutoPatentConfig:
     payload: Mapping[str, Any] = {}
     if candidate.is_file():
         try:
-            payload = json.loads(candidate.read_text())
+            payload = json.loads(candidate.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
             raise ValueError(
                 f"Unable to parse config file at {candidate}: {exc}"
