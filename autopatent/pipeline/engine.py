@@ -11,7 +11,17 @@ class PipelineEngine:
 
     def run(self, context: StageContext) -> None:
         for stage in self._stages:
-            missing = [k for k in getattr(stage, "requires", []) if k not in context.metadata]
+            missing = []
+            for k in getattr(stage, "requires", []):
+                if k not in context.metadata:
+                    missing.append(k)
+                    continue
+                value = context.metadata.get(k)
+                if value is None:
+                    missing.append(k)
+                    continue
+                if isinstance(value, str) and not value.strip():
+                    missing.append(k)
             if missing:
                 sid = getattr(stage, "stage_id", stage.__class__.__name__)
                 raise ValueError(f"Stage {sid} missing required inputs: {missing}")

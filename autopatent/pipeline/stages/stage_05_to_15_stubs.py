@@ -16,13 +16,14 @@ Everything here is intentionally minimal and deterministic (no network, no LLM).
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, List, Optional
+from uuid import uuid4
 
-from autopatent.pipeline import StageContext, StageResult
+from autopatent.pipeline import Stage, StageContext, StageResult
 
 
 def _atomic_write_text(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp")
+    tmp = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
     tmp.write_text(content, encoding="utf-8")
     tmp.replace(path)
 
@@ -30,9 +31,31 @@ def _atomic_write_text(path: Path, content: str) -> None:
 def _read_text_if_exists(path: Optional[Path]) -> Optional[str]:
     if path is None:
         return None
-    if not path.exists():
+    if not path.exists() or not path.is_file():
         return None
     return path.read_text(encoding="utf-8")
+
+
+def _safe_artifact_source(ctx: StageContext, key: str) -> Optional[Path]:
+    raw = ctx.metadata.get(key)
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+
+    candidate = Path(text).expanduser()
+    if not candidate.is_absolute():
+        candidate = (ctx.work_dir / candidate).resolve()
+    else:
+        candidate = candidate.resolve()
+
+    allowed_root = (ctx.work_dir / "artifacts").resolve()
+    try:
+        candidate.relative_to(allowed_root)
+    except ValueError as exc:
+        raise ValueError(f"Unsafe artifact source outside work_dir/artifacts: {candidate}") from exc
+    return candidate
 
 
 def _topic(ctx: StageContext) -> str:
@@ -135,8 +158,8 @@ class DeliverablesExportStage:
     )
 
     def run(self, ctx: StageContext) -> StageResult:
-        disclosure_src = Path(str(ctx.metadata.get("disclosure_draft_path", "") or ""))
-        playbook_src = Path(str(ctx.metadata.get("oa_response_playbook_draft_path", "") or ""))
+        disclosure_src = _safe_artifact_source(ctx, "disclosure_draft_path")
+        playbook_src = _safe_artifact_source(ctx, "oa_response_playbook_draft_path")
 
         disclosure_content = _read_text_if_exists(disclosure_src) or _render_disclosure_draft(ctx)
         playbook_content = _read_text_if_exists(playbook_src) or _render_oa_response_playbook_draft(
@@ -162,7 +185,7 @@ class DeliverablesExportStage:
         )
 
 
-def stage_05_to_15_stages() -> List[object]:
+def stage_05_to_15_stages() -> List[Stage]:
     """Return Stage 05-15 instances for the CN MVP pipeline."""
 
     return [
@@ -192,4 +215,3 @@ def stage_05_to_15_stages() -> List[object]:
         ),
         DeliverablesExportStage(),
     ]
-
