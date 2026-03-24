@@ -112,8 +112,14 @@ class HumanDirectionGateStage:
                 return result
 
             if cmd == "quit":
+                ctx.metadata["selected_direction_id"] = None
+                ctx.metadata["direction_gate_decision_path"] = None
                 result = StageResult(produces=list(self.produces))
-                result.outputs = {"selected_direction_id": None, "status": "quit"}
+                result.outputs = {
+                    "selected_direction_id": None,
+                    "direction_gate_decision_path": None,
+                    "status": "quit",
+                }
                 return result
 
             if cmd == "drop":
@@ -198,4 +204,3 @@ class HumanDirectionGateStage:
         score_a = float(a.get("score", 0.0)) if isinstance(a.get("score"), (int, float)) else 0.0
         score_b = float(b.get("score", 0.0)) if isinstance(b.get("score"), (int, float)) else 0.0
         return {"id": mid, "title": title, "summary": summary, "score": max(score_a, score_b)}
-

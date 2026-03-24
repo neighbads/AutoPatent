@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -30,6 +31,10 @@ def test_human_gate_choose_persists_decision(tmp_path, monkeypatch):
     stage = HumanDirectionGateStage()
     result = stage.run(ctx_with_candidates(tmp_path))
     assert result.outputs["selected_direction_id"] == "2"
+    decision_path = tmp_path / "direction_gate_decision.json"
+    assert decision_path.exists()
+    payload = json.loads(decision_path.read_text(encoding="utf-8"))
+    assert payload["selected_direction_id"] == "2"
 
 
 @pytest.mark.parametrize(
@@ -54,4 +59,3 @@ def test_human_gate_invalid_command_prompts_again(tmp_path, monkeypatch, command
     stage = HumanDirectionGateStage()
     result = stage.run(ctx_with_candidates(tmp_path))
     assert result.outputs["selected_direction_id"] == "1"
-

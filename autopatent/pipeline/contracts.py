@@ -14,6 +14,7 @@ class StageContext:
 @dataclass
 class StageResult:
     produces: list[str] = field(default_factory=list)
+    outputs: dict[str, Any] = field(default_factory=dict)
 
 
 class Stage(Protocol):
