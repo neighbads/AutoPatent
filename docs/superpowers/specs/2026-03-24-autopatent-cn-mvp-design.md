@@ -158,12 +158,12 @@ CLI 人工选择关卡；弱质量自动扩检，最多 3 轮。
 2. 最多重试 3 轮
 3. 超限后必须进入人工决策（继续/终止/改题）
 
-### 5.4 Resume 行为
+### 5.4 Resume 行为（目标设计，待完整实现）
 
-1. 每阶段写入 checkpoint
-2. `--resume` 从最近失败或中断阶段继续
-3. 已确认的人类决策写入 `human_decisions.json`
-4. 恢复时默认不重复询问已确认决策（可通过 `--force-gate` 强制重问）
+1. 目标行为：每阶段写入 checkpoint
+2. 目标行为：`--resume` 从最近失败或中断阶段继续
+3. 目标行为：已确认的人类决策写入 `human_decisions.json`
+4. 当前状态：CLI 已预留 `--resume` 参数形态，完整 checkpoint / decision 恢复语义仍在后续任务中实现
 
 ## 6. 检索资源与策略（MVP）
 
