@@ -48,6 +48,7 @@ def test_prior_art_scan_generates_queries_evidence_and_meta(tmp_path):
     assert meta["raw_hits"] >= meta["deduped_hits"] >= 1
     assert meta["query_count"] == len(queries)
     assert meta["resource_count"] >= 10
+    assert meta["provider"] == "offline"
 
 
 def test_prior_art_scan_expands_queries_with_seed_artifacts(tmp_path):
@@ -88,3 +89,43 @@ def test_prior_art_scan_expands_queries_with_seed_artifacts(tmp_path):
     joined = " ".join(queries).lower()
     assert "ikev2" in joined
     assert "tlcp_adapter" in joined
+
+
+def test_prior_art_scan_supports_seed_only_provider(tmp_path):
+    ctx = StageContext(
+        work_dir=tmp_path,
+        metadata={
+            "topic": "国密 TLCP / IPSec 混合抗量子方案",
+            "search_provider": "seed-only",
+            "direction_candidates": [
+                {"id": "1", "title": "握手协商流程优化", "summary": "s1"},
+                {"id": "2", "title": "密钥管理接口设计", "summary": "s2"},
+            ],
+        },
+    )
+    stage = PriorArtScanStage()
+    stage.run(ctx)
+
+    meta = json.loads((tmp_path / "artifacts" / "search_meta.json").read_text(encoding="utf-8"))
+    assert meta["provider"] == "seed-only"
+    assert meta["raw_hits"] == meta["query_count"]
+
+
+def test_prior_art_scan_rejects_unknown_provider(tmp_path):
+    ctx = StageContext(
+        work_dir=tmp_path,
+        metadata={
+            "topic": "国密 TLCP / IPSec 混合抗量子方案",
+            "search_provider": "unknown-provider",
+            "direction_candidates": [
+                {"id": "1", "title": "握手协商流程优化", "summary": "s1"},
+            ],
+        },
+    )
+    stage = PriorArtScanStage()
+    try:
+        stage.run(ctx)
+    except ValueError as exc:
+        assert "search provider" in str(exc).lower()
+    else:
+        raise AssertionError("expected ValueError for unknown provider")

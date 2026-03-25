@@ -2,6 +2,7 @@
 
 from autopatent.search.dedup import deduplicate_hits, normalize_title
 from autopatent.search.evidence_summary import summarize_hits
+from autopatent.search.providers import get_search_provider
 from autopatent.search.query_builder import build_queries
 from autopatent.search.resources import default_resources
 
@@ -11,4 +12,5 @@ __all__ = [
     "deduplicate_hits",
     "normalize_title",
     "summarize_hits",
+    "get_search_provider",
 ]

@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List
 
 from autopatent.pipeline import StageContext, StageResult
-from autopatent.search import build_queries, deduplicate_hits, default_resources, summarize_hits
+from autopatent.search import (
+    build_queries,
+    deduplicate_hits,
+    default_resources,
+    get_search_provider,
+    summarize_hits,
+)
 
 
 @dataclass
@@ -29,6 +36,7 @@ class PriorArtScanStage:
             "prior_art_queries_path",
             "prior_art_search_meta_path",
             "prior_art_evidence_path",
+            "prior_art_provider",
         ]
     )
 
@@ -43,7 +51,14 @@ class PriorArtScanStage:
         resources = default_resources()
         queries = build_queries(topic, candidates)
         queries = _extend_queries_from_seed_artifacts(ctx=ctx, queries=queries)
-        raw_hits = _generate_raw_hits(topic=topic, resources=resources, queries=queries, candidates=candidates)
+        provider_name = _resolve_provider_name(ctx)
+        provider = get_search_provider(provider_name)
+        raw_hits = provider.collect(
+            topic=topic,
+            resources=resources,
+            queries=queries,
+            candidates=candidates,
+        )
         deduped_hits = deduplicate_hits(raw_hits)
         evidence = summarize_hits(deduped_hits)
 
@@ -56,12 +71,14 @@ class PriorArtScanStage:
             raw_hits_count=len(raw_hits),
             deduped_hits_count=len(deduped_hits),
             evidence_count=len(evidence),
+            provider_name=provider.name,
         )
 
         ctx.metadata["prior_art_resources"] = resources
         ctx.metadata["prior_art_queries_path"] = str(queries_path)
         ctx.metadata["prior_art_search_meta_path"] = str(meta_path)
         ctx.metadata["prior_art_evidence_path"] = str(evidence_path)
+        ctx.metadata["prior_art_provider"] = provider.name
 
         result = StageResult(produces=list(self.produces))
         result.outputs = {
@@ -69,41 +86,19 @@ class PriorArtScanStage:
             "prior_art_queries_path": str(queries_path),
             "prior_art_search_meta_path": str(meta_path),
             "prior_art_evidence_path": str(evidence_path),
+            "prior_art_provider": provider.name,
         }
         return result
 
 
-def _generate_raw_hits(
-    *,
-    topic: str,
-    resources: List[Dict[str, str]],
-    queries: List[str],
-    candidates: List[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
-    direction_ids = [str(c.get("id")) for c in candidates if "id" in c]
-    hits: List[Dict[str, Any]] = []
-    if not queries or not resources:
-        return hits
-
-    # Keep runtime bounded and deterministic.
-    sampled_queries = queries[: min(6, len(queries))]
-    sampled_resources = resources[: min(10, len(resources))]
-    for q_idx, query in enumerate(sampled_queries, start=1):
-        for r_idx, resource in enumerate(sampled_resources, start=1):
-            # Intentionally create repeated titles across resources so dedup has effect.
-            duplicate_bucket = (q_idx % 3) + 1
-            title = f"{topic or '主题'} 相关方案 {duplicate_bucket}"
-            hits.append(
-                {
-                    "source": resource.get("source"),
-                    "endpoint": resource.get("endpoint"),
-                    "query": query,
-                    "title": title,
-                    "related_direction_ids": direction_ids,
-                    "rank": r_idx,
-                }
-            )
-    return hits
+def _resolve_provider_name(ctx: StageContext) -> str:
+    metadata_name = str(ctx.metadata.get("search_provider", "") or "").strip()
+    if metadata_name:
+        return metadata_name
+    env_name = str(os.getenv("AUTOPATENT_SEARCH_PROVIDER", "") or "").strip()
+    if env_name:
+        return env_name
+    return "offline"
 
 
 def _write_queries(*, work_dir: Path, queries: List[str]) -> Path:
@@ -204,6 +199,7 @@ def _write_search_meta(
     raw_hits_count: int,
     deduped_hits_count: int,
     evidence_count: int,
+    provider_name: str,
 ) -> Path:
     payload = {
         "query_count": len(queries),
@@ -211,6 +207,7 @@ def _write_search_meta(
         "raw_hits": raw_hits_count,
         "deduped_hits": deduped_hits_count,
         "evidence_count": evidence_count,
+        "provider": provider_name,
     }
     path = work_dir / "artifacts" / "search_meta.json"
     path.parent.mkdir(parents=True, exist_ok=True)

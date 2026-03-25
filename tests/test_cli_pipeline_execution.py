@@ -37,6 +37,7 @@ def test_run_generates_deliverables_and_checkpoints(tmp_path):
     assert (output_dir / "artifacts" / "direction_analysis_report.md").exists()
     assert (output_dir / "artifacts" / "prior_art_evidence.jsonl").exists()
     assert (output_dir / "artifacts" / "direction_scores.json").exists()
+    assert (output_dir / "artifacts" / "disclosure_outline.md").exists()
     assert (output_dir / "artifacts" / "disclosure_context.json").exists()
     assert (output_dir / "artifacts" / "disclosure.docx").exists()
 

@@ -262,6 +262,34 @@ class _WriteJsonArtifactStage:
 
 
 @dataclass
+class _Stage06DisclosureOutlineStage:
+    stage_id: str = "STAGE_06"
+    requires: list[str] = field(default_factory=lambda: ["selected_direction_id"])
+    produces: list[str] = field(
+        default_factory=lambda: ["disclosure_outline_path", "disclosure_context_path"]
+    )
+
+    def run(self, ctx: StageContext) -> StageResult:
+        outline_path = ctx.work_dir / "artifacts" / "disclosure_outline.md"
+        _atomic_write_text(outline_path, _render_disclosure_outline(ctx))
+
+        disclosure_context = _build_disclosure_context(ctx)
+        context_path = ctx.work_dir / "artifacts" / "disclosure_context.json"
+        _atomic_write_json(context_path, disclosure_context)
+
+        ctx.metadata["disclosure_outline_path"] = str(outline_path)
+        ctx.metadata["disclosure_context_path"] = str(context_path)
+
+        return StageResult(
+            produces=list(self.produces),
+            outputs={
+                "disclosure_outline_path": str(outline_path),
+                "disclosure_context_path": str(context_path),
+            },
+        )
+
+
+@dataclass
 class _RenderDisclosureStage:
     stage_id: str = "STAGE_07"
     requires: list[str] = field(default_factory=lambda: ["disclosure_context_path"])
@@ -403,14 +431,7 @@ def stage_05_to_15_stages() -> List[Stage]:
             output_key="title_finalization_path",
             render=_render_title_finalization,
         ),
-        _WriteJsonArtifactStage(
-            stage_id="STAGE_06",
-            requires=["selected_direction_id"],
-            produces=["disclosure_context_path"],
-            relpath="artifacts/disclosure_context.json",
-            output_key="disclosure_context_path",
-            render_json=_build_disclosure_context,
-        ),
+        _Stage06DisclosureOutlineStage(),
         _RenderDisclosureStage(),
         _WriteArtifactStage(
             stage_id="STAGE_08",
