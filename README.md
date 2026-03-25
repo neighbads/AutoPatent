@@ -8,6 +8,7 @@ AutoPatent 是一个面向中国发明专利撰写流程的自动化程序。
 
 本仓库目前仅实现中国发明专利自动化流程的 MVP 版本，聚焦交底书与审查意见预案导出链路，不包含海外制度或法律规则引擎。  
 当前实现重点是“可恢复的阶段化执行框架 + 最小可用产物导出”，复杂检索与法律校验逻辑仍会在后续迭代补全。
+当前 `STAGE_02` 已具备离线检索管线（查询扩展、去重、证据摘要），默认使用本地确定性 pseudo-hits，不访问外网。
 
 ## 快速开始
 
@@ -54,6 +55,8 @@ python -m autopatent.cli run --topic "示例主题" --output ./artifacts/demo --
 11. `./artifacts/demo/artifacts/disclosure_context.json`
 12. `./artifacts/demo/deliverables/disclosure_validation_report.md`
 13. `./artifacts/demo/final_package/`
+14. `./artifacts/demo/artifacts/prior_art_queries.json`
+15. `./artifacts/demo/artifacts/search_meta.json`
 
 ## 默认模板行为
 
