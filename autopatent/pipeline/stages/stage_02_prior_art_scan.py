@@ -18,12 +18,12 @@ from autopatent.search import (
 
 @dataclass
 class PriorArtScanStage:
-    """Stage 02: Offline prior-art scan pipeline for CN MVP.
+    """Stage 02: Prior-art scan pipeline for CN MVP.
 
     Behavior:
     - Build multi-source resource list (patent + paper).
     - Expand topic/candidate driven queries.
-    - Generate deterministic pseudo-hits (offline, no network).
+    - Collect hits from configured provider (offline/seed-only/online).
     - Deduplicate and summarize into evidence JSONL.
     - Persist queries/meta artifacts for traceability.
     """

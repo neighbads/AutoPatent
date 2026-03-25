@@ -66,6 +66,20 @@ def test_human_gate_non_interactive_uses_preselected(tmp_path):
     assert (tmp_path / "direction_gate_decision.json").exists()
 
 
+def test_human_gate_interactive_prints_candidates(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr("builtins.input", lambda _: "choose 2")
+    from autopatent.pipeline.stages.stage_04_human_direction_gate import (
+        HumanDirectionGateStage,
+    )
+
+    stage = HumanDirectionGateStage()
+    stage.run(ctx_with_candidates(tmp_path))
+    out = capsys.readouterr().out
+    assert "Candidate directions" in out
+    assert "[1]" in out
+    assert "[2]" in out
+
+
 @pytest.mark.parametrize(
     "command",
     [

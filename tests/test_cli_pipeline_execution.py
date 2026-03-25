@@ -11,6 +11,11 @@ def _read_checkpoint_history(output_dir: Path) -> list[dict[str, str]]:
     return json.loads(history_file.read_text(encoding="utf-8"))
 
 
+def _read_stage_manifest(output_dir: Path, stage_id: str) -> dict:
+    manifest_path = output_dir / "stage_outputs" / stage_id / "manifest.json"
+    return json.loads(manifest_path.read_text(encoding="utf-8"))
+
+
 def test_run_generates_deliverables_and_checkpoints(tmp_path):
     runner = CliRunner()
     output_dir = tmp_path / "run-out"
@@ -28,18 +33,43 @@ def test_run_generates_deliverables_and_checkpoints(tmp_path):
     )
 
     assert result.exit_code == 0
+    assert "Stage outputs summary:" in result.output
+    assert "STAGE_00 INPUT_INGEST(输入阶段):" in result.output
+    assert "STAGE_01 DIRECTION_DISCOVERY(方向候选):" in result.output
+    assert "STAGE_15 DELIVERABLES_EXPORT(交付打包):" in result.output
     assert (output_dir / "deliverables" / "disclosure.md").exists()
     assert (output_dir / "deliverables" / "disclosure.docx").exists()
     assert (output_dir / "deliverables" / "oa_response_playbook.md").exists()
     assert (output_dir / "deliverables" / "disclosure_validation_report.md").exists()
+    assert (output_dir / "deliverables" / "system_architecture.md").exists()
+    assert (output_dir / "deliverables" / "process_stages.md").exists()
+    assert (output_dir / "deliverables" / "figures_and_tables_plan.md").exists()
+    assert (output_dir / "deliverables" / "architecture_ascii.txt").exists()
+    assert (output_dir / "deliverables" / "process_flow_ascii.txt").exists()
+    assert (output_dir / "deliverables" / "architecture.mmd").exists()
+    assert (output_dir / "deliverables" / "process_flow.mmd").exists()
     assert (output_dir / "final_package").exists()
     assert (output_dir / "final_package" / "disclosure.docx").exists()
+    assert (output_dir / "final_package" / "system_architecture.md").exists()
+    assert (output_dir / "final_package" / "process_stages.md").exists()
+    assert (output_dir / "final_package" / "figures_and_tables_plan.md").exists()
+    assert (output_dir / "final_package" / "architecture_ascii.txt").exists()
+    assert (output_dir / "final_package" / "process_flow_ascii.txt").exists()
+    assert (output_dir / "final_package" / "architecture.mmd").exists()
+    assert (output_dir / "final_package" / "process_flow.mmd").exists()
     assert (output_dir / "artifacts" / "direction_analysis_report.md").exists()
     assert (output_dir / "artifacts" / "prior_art_evidence.jsonl").exists()
     assert (output_dir / "artifacts" / "direction_scores.json").exists()
     assert (output_dir / "artifacts" / "disclosure_outline.md").exists()
     assert (output_dir / "artifacts" / "disclosure_context.json").exists()
     assert (output_dir / "artifacts" / "disclosure.docx").exists()
+    assert (output_dir / "artifacts" / "system_architecture.md").exists()
+    assert (output_dir / "artifacts" / "process_stages.md").exists()
+    assert (output_dir / "artifacts" / "figures_and_tables_plan.md").exists()
+    assert (output_dir / "artifacts" / "architecture_ascii.txt").exists()
+    assert (output_dir / "artifacts" / "process_flow_ascii.txt").exists()
+    assert (output_dir / "artifacts" / "architecture.mmd").exists()
+    assert (output_dir / "artifacts" / "process_flow.mmd").exists()
 
     history = _read_checkpoint_history(output_dir)
     assert history[0]["stage_id"] == "STAGE_00"
@@ -47,6 +77,15 @@ def test_run_generates_deliverables_and_checkpoints(tmp_path):
     assert history[-1]["stage_id"] == "STAGE_15"
     assert history[-1]["status"] == "done"
     assert len(history) == 16
+
+    # New per-stage output snapshot
+    for idx in range(16):
+        stage_id = f"STAGE_{idx:02d}"
+        manifest = _read_stage_manifest(output_dir, stage_id)
+        assert manifest["stage_id"] == stage_id
+        assert manifest["status"] == "done"
+    stage04 = _read_stage_manifest(output_dir, "STAGE_04")
+    assert "direction_gate_decision.json" in stage04["changed_files"]
 
     latest_metadata = output_dir / "state" / "metadata_latest.json"
     assert latest_metadata.exists()

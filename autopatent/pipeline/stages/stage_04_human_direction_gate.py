@@ -103,6 +103,7 @@ class HumanDirectionGateStage:
             )
 
         manual_retries = 0
+        self._print_candidates(candidates)
 
         while True:
             raw = input(
@@ -144,6 +145,7 @@ class HumanDirectionGateStage:
                 target = args[0]
                 candidates = [c for c in candidates if str(c.get("id")) != target]
                 ctx.metadata["direction_candidates"] = candidates
+                self._print_candidates(candidates)
                 continue
 
             if cmd == "expand":
@@ -161,6 +163,7 @@ class HumanDirectionGateStage:
                     manual_retries += 1
                 ctx.metadata["direction_candidates"] = candidates
                 ctx.metadata["direction_gate_manual_expand_retries"] = manual_retries
+                self._print_candidates(candidates)
                 continue
 
             if cmd == "merge":
@@ -172,7 +175,23 @@ class HumanDirectionGateStage:
                 merged = self._merge_candidates(ca, cb, candidates)
                 candidates.append(merged)
                 ctx.metadata["direction_candidates"] = candidates
+                self._print_candidates(candidates)
                 continue
+
+    def _print_candidates(self, candidates: List[Dict[str, Any]]) -> None:
+        print("Candidate directions:")
+        for item in candidates:
+            cid = str(item.get("id", "")).strip() or "-"
+            title = str(item.get("title", "")).strip() or "(untitled)"
+            summary = str(item.get("summary", "")).strip()
+            score = item.get("score")
+            score_text = f"{float(score):.3f}" if isinstance(score, (int, float)) else "n/a"
+            quality = str(item.get("quality", "")).strip() or "n/a"
+            if summary:
+                print(f"  [{cid}] {title} | score={score_text} | quality={quality}")
+                print(f"       {summary}")
+            else:
+                print(f"  [{cid}] {title} | score={score_text} | quality={quality}")
 
     def _parse(self, raw: str) -> Tuple[Optional[str], List[str]]:
         parts = raw.strip().split()

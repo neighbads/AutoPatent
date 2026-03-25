@@ -111,6 +111,89 @@ def test_prior_art_scan_supports_seed_only_provider(tmp_path):
     assert meta["raw_hits"] == meta["query_count"]
 
 
+def test_prior_art_scan_supports_online_provider_with_mocked_fetchers(tmp_path, monkeypatch):
+    from autopatent.search.providers import OnlineSearchProvider
+
+    def _mock_openalex(self, *, query, endpoint, direction_ids):
+        return [
+            {
+                "source": "OPENALEX",
+                "endpoint": endpoint,
+                "query": query,
+                "title": f"{query} openalex result",
+                "related_direction_ids": direction_ids,
+                "rank": 1,
+            }
+        ]
+
+    def _mock_arxiv(self, *, query, endpoint, direction_ids):
+        return [
+            {
+                "source": "ARXIV",
+                "endpoint": endpoint,
+                "query": query,
+                "title": f"{query} arxiv result",
+                "related_direction_ids": direction_ids,
+                "rank": 1,
+            }
+        ]
+
+    monkeypatch.setattr(OnlineSearchProvider, "_fetch_openalex", _mock_openalex)
+    monkeypatch.setattr(OnlineSearchProvider, "_fetch_arxiv", _mock_arxiv)
+
+    ctx = StageContext(
+        work_dir=tmp_path,
+        metadata={
+            "topic": "抗量子SSL和证书",
+            "search_provider": "online",
+            "direction_candidates": [
+                {"id": "1", "title": "混合证书链", "summary": "s1"},
+                {"id": "2", "title": "握手协商扩展", "summary": "s2"},
+            ],
+        },
+    )
+    stage = PriorArtScanStage()
+    stage.run(ctx)
+
+    evidence = _read_jsonl(tmp_path / "artifacts" / "prior_art_evidence.jsonl")
+    meta = json.loads((tmp_path / "artifacts" / "search_meta.json").read_text(encoding="utf-8"))
+    assert meta["provider"] == "online"
+    assert meta["raw_hits"] >= 2
+    assert len(evidence) >= 2
+
+
+def test_prior_art_scan_online_generates_english_query_variants(tmp_path, monkeypatch):
+    from autopatent.search.providers import OnlineSearchProvider
+
+    captured_queries = []
+
+    def _capture_openalex(self, *, query, endpoint, direction_ids):
+        captured_queries.append(query)
+        return []
+
+    def _capture_arxiv(self, *, query, endpoint, direction_ids):
+        captured_queries.append(query)
+        return []
+
+    monkeypatch.setattr(OnlineSearchProvider, "_fetch_openalex", _capture_openalex)
+    monkeypatch.setattr(OnlineSearchProvider, "_fetch_arxiv", _capture_arxiv)
+
+    ctx = StageContext(
+        work_dir=tmp_path,
+        metadata={
+            "topic": "抗量子SSL和证书",
+            "search_provider": "online",
+            "direction_candidates": [
+                {"id": "1", "title": "混合证书链", "summary": "s1"},
+            ],
+        },
+    )
+    stage = PriorArtScanStage()
+    stage.run(ctx)
+
+    assert any("post-quantum" in item.lower() for item in captured_queries)
+
+
 def test_prior_art_scan_rejects_unknown_provider(tmp_path):
     ctx = StageContext(
         work_dir=tmp_path,

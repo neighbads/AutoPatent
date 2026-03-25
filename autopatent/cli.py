@@ -1,4 +1,5 @@
 import json
+import shutil
 from pathlib import Path
 from typing import Any, Optional, Sequence
 
@@ -19,6 +20,36 @@ from autopatent.templates.renderer import DEFAULT_TEMPLATE_NAME
 
 app = typer.Typer()
 _DEFAULT_SELECTED_DIRECTION_ID = "2"
+_STAGE_TRACKED_ROOTS = (
+    "artifacts",
+    "deliverables",
+    "final_package",
+    "direction_gate_decision.json",
+)
+_STAGE_DISPLAY_NAMES = {
+    "STAGE_00": "INPUT_INGEST(输入阶段)",
+    "STAGE_01": "DIRECTION_DISCOVERY(方向候选)",
+    "STAGE_02": "PRIOR_ART_SCAN(现有技术检索)",
+    "STAGE_03": "DIRECTION_SCORING(方向评分)",
+    "STAGE_04": "HUMAN_DIRECTION_GATE(人工选题)",
+    "STAGE_05": "TITLE_FINALIZATION(题目确认)",
+    "STAGE_06": "DISCLOSURE_OUTLINE(交底书大纲)",
+    "STAGE_07": "DISCLOSURE_DRAFT(交底书撰写)",
+    "STAGE_08": "DISCLOSURE_VALIDATE(交底书校验)",
+    "STAGE_09": "CLAIM_STRATEGY(权利要求策略)",
+    "STAGE_10": "CLAIMS_DRAFT(权利要求撰写)",
+    "STAGE_11": "SPEC_DRAFT(说明书撰写)",
+    "STAGE_12": "LEGAL_VALIDATE(法律与格式校验)",
+    "STAGE_13": "NOVELTY_RISK(新颖性/创造性风险)",
+    "STAGE_14": "OA_PLAYBOOK(审查意见答复剧本)",
+    "STAGE_15": "DELIVERABLES_EXPORT(交付打包)",
+}
+_STAGE_OPTIONAL_ARTIFACT_HINTS = {
+    "STAGE_00": [
+        "artifacts/input_doc_digest.md (optional: when --input-doc is provided)",
+        "artifacts/code_inventory.json (optional: when --code-dir is provided)",
+    ],
+}
 
 
 @app.callback()
@@ -86,20 +117,38 @@ def run(
 
     ctx = StageContext(work_dir=output_dir, metadata=metadata)
     for stage in stages[start_idx:]:
+        before_snapshot = _collect_stage_tracked_file_signatures(output_dir)
         typer.echo(f"[{stage.stage_id}] running...")
         try:
             PipelineEngine([stage]).run(ctx)
         except Exception:
             checkpoints.save(stage_id=stage.stage_id, status="failed")
+            _write_stage_output_snapshot(
+                output_dir=output_dir,
+                stage_id=stage.stage_id,
+                status="failed",
+                before_snapshot=before_snapshot,
+                metadata=ctx.metadata,
+                produced_keys=getattr(stage, "produces", []),
+            )
             _write_metadata_snapshot(state_dir=state_dir, stage_id=stage.stage_id, metadata=ctx.metadata)
             _write_human_decisions(state_dir=state_dir, stage_id=stage.stage_id, metadata=ctx.metadata)
             raise
         checkpoints.save(stage_id=stage.stage_id, status="done")
+        _write_stage_output_snapshot(
+            output_dir=output_dir,
+            stage_id=stage.stage_id,
+            status="done",
+            before_snapshot=before_snapshot,
+            metadata=ctx.metadata,
+            produced_keys=getattr(stage, "produces", []),
+        )
         _write_metadata_snapshot(state_dir=state_dir, stage_id=stage.stage_id, metadata=ctx.metadata)
         _write_human_decisions(state_dir=state_dir, stage_id=stage.stage_id, metadata=ctx.metadata)
         typer.echo(f"[{stage.stage_id}] done")
 
     typer.echo("Pipeline complete")
+    _print_stage_outputs_summary(output_dir=output_dir, stages=stages)
 
 
 def _build_stages() -> list[Stage]:
@@ -258,6 +307,137 @@ def _to_jsonable(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(normalized, dict):
         raise ValueError("metadata payload must serialize to a JSON object")
     return normalized
+
+
+def _collect_stage_tracked_file_signatures(output_dir: Path) -> dict[str, tuple[int, int]]:
+    signatures: dict[str, tuple[int, int]] = {}
+    for item in _STAGE_TRACKED_ROOTS:
+        root = output_dir / item
+        if root.is_file():
+            rel = str(root.relative_to(output_dir))
+            stat = root.stat()
+            signatures[rel] = (int(stat.st_mtime_ns), int(stat.st_size))
+            continue
+        if not root.exists() or not root.is_dir():
+            continue
+        for path in sorted(root.rglob("*")):
+            if not path.is_file():
+                continue
+            rel = str(path.relative_to(output_dir))
+            stat = path.stat()
+            signatures[rel] = (int(stat.st_mtime_ns), int(stat.st_size))
+    return signatures
+
+
+def _write_stage_output_snapshot(
+    *,
+    output_dir: Path,
+    stage_id: str,
+    status: str,
+    before_snapshot: dict[str, tuple[int, int]],
+    metadata: dict[str, Any],
+    produced_keys: Sequence[str],
+) -> None:
+    after_snapshot = _collect_stage_tracked_file_signatures(output_dir)
+    changed_files = sorted(
+        rel for rel, signature in after_snapshot.items() if before_snapshot.get(rel) != signature
+    )
+
+    stage_root = output_dir / "stage_outputs" / stage_id
+    files_root = stage_root / "files"
+    files_root.mkdir(parents=True, exist_ok=True)
+    for rel in changed_files:
+        src = output_dir / rel
+        if not src.exists() or not src.is_file():
+            continue
+        dst = files_root / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+
+    outputs: dict[str, Any] = {}
+    for key in produced_keys:
+        outputs[str(key)] = metadata.get(key)
+
+    manifest = {
+        "stage_id": stage_id,
+        "status": status,
+        "changed_files": changed_files,
+        "changed_file_count": len(changed_files),
+        "outputs": outputs,
+    }
+    (stage_root / "manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def _print_stage_outputs_summary(*, output_dir: Path, stages: Sequence[Stage]) -> None:
+    typer.echo("")
+    typer.echo("Stage outputs summary:")
+    for stage in stages:
+        stage_id = stage.stage_id
+        display = _STAGE_DISPLAY_NAMES.get(stage_id, stage_id)
+        typer.echo(f"{stage_id} {display}:")
+        items = _stage_output_items(output_dir=output_dir, stage_id=stage_id)
+        if not items:
+            typer.echo("  (no file artifacts)")
+            hints = _STAGE_OPTIONAL_ARTIFACT_HINTS.get(stage_id, [])
+            for hint in hints:
+                typer.echo(f"  {hint}")
+            continue
+        for item in items:
+            typer.echo(f"  {item}")
+
+
+def _stage_output_items(*, output_dir: Path, stage_id: str) -> list[str]:
+    manifest_path = output_dir / "stage_outputs" / stage_id / "manifest.json"
+    if not manifest_path.exists():
+        return []
+    payload = _read_json_object(manifest_path, label=f"stage manifest {stage_id}")
+
+    changed: list[str] = []
+    raw_changed = payload.get("changed_files")
+    if isinstance(raw_changed, list):
+        for item in raw_changed:
+            text = str(item).strip()
+            if text:
+                changed.append(text)
+
+    produced: list[str] = []
+    raw_outputs = payload.get("outputs")
+    if isinstance(raw_outputs, dict):
+        for value in raw_outputs.values():
+            if not isinstance(value, str):
+                continue
+            path_text = value.strip()
+            if not path_text:
+                continue
+            rel = _to_output_relative_path(output_dir=output_dir, raw_path=path_text)
+            if rel is None:
+                continue
+            produced.append(rel)
+
+    merged: list[str] = []
+    seen = set()
+    for item in changed + produced:
+        if item in seen:
+            continue
+        seen.add(item)
+        merged.append(item)
+    return merged
+
+
+def _to_output_relative_path(*, output_dir: Path, raw_path: str) -> Optional[str]:
+    candidate = Path(raw_path).expanduser()
+    if not candidate.is_absolute():
+        candidate = (output_dir / candidate).resolve()
+    else:
+        candidate = candidate.resolve()
+    if not candidate.exists() or not candidate.is_file():
+        return None
+    try:
+        return str(candidate.relative_to(output_dir))
+    except ValueError:
+        return str(candidate)
 
 
 if __name__ == "__main__":

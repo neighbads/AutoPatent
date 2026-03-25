@@ -76,6 +76,23 @@ def test_mvp_outputs_key_artifacts(tmp_path):
     run_pipeline(tmp_path)
     assert (tmp_path / "deliverables/disclosure.md").exists()
     assert (tmp_path / "deliverables/oa_response_playbook.md").exists()
+    assert (tmp_path / "deliverables/system_architecture.md").exists()
+    assert (tmp_path / "deliverables/process_stages.md").exists()
+    assert (tmp_path / "deliverables/figures_and_tables_plan.md").exists()
+    assert (tmp_path / "deliverables/architecture_ascii.txt").exists()
+    assert (tmp_path / "deliverables/process_flow_ascii.txt").exists()
+    assert (tmp_path / "deliverables/architecture.mmd").exists()
+    assert (tmp_path / "deliverables/process_flow.mmd").exists()
+
+    disclosure = (tmp_path / "artifacts/disclosure.md").read_text(encoding="utf-8")
+    spec = (tmp_path / "artifacts/spec_draft.md").read_text(encoding="utf-8")
+    assert "系统架构描述（补充）" in disclosure
+    assert "关键流程与阶段说明（补充）" in disclosure
+    assert "附图与图表说明（补充）" in disclosure
+    assert "图示与流程图（生成产物）" in disclosure
+    assert "系统架构描述（补充）" in spec
+    assert "关键流程与阶段说明（补充）" in spec
+    assert "图示与流程图（生成产物）" in spec
 
 
 def test_engine_treats_empty_required_value_as_missing(tmp_path):

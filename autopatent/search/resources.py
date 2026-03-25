@@ -11,6 +11,7 @@ def default_resources() -> List[Dict[str, str]]:
         {"source": "USPTO", "endpoint": "https://ppubs.uspto.gov", "kind": "patent"},
         {"source": "GOOGLE_PATENTS", "endpoint": "https://patents.google.com", "kind": "patent"},
         {"source": "GOOGLE_SCHOLAR", "endpoint": "https://scholar.google.com", "kind": "paper"},
+        {"source": "OPENALEX", "endpoint": "https://api.openalex.org/works", "kind": "paper"},
         {"source": "SEMANTIC_SCHOLAR", "endpoint": "https://www.semanticscholar.org", "kind": "paper"},
         {"source": "ARXIV", "endpoint": "https://arxiv.org", "kind": "paper"},
         {"source": "IEEE_XPLORE", "endpoint": "https://ieeexplore.ieee.org", "kind": "paper"},

@@ -13,6 +13,11 @@ on failure.
 """
 
 import json
+import os
+import re
+import shutil
+import subprocess
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -104,7 +109,69 @@ def _try_llm_text(*, ctx: StageContext, task: str, prompt: str, fallback: str) -
     except Exception:
         return fallback
     content = str(text or "").strip()
-    return content or fallback
+    cleaned = _sanitize_llm_output(task=task, text=content)
+    return cleaned or fallback
+
+
+def _sanitize_llm_output(*, task: str, text: str) -> str:
+    if not text:
+        return ""
+    lines = str(text).replace("\r\n", "\n").split("\n")
+    # Remove leading "AI assistant style" preface lines.
+    lead_prefixes = (
+        "以下为",
+        "以下是",
+        "以下可",
+        "下面给出",
+        "以下内容",
+    )
+    while lines:
+        first = lines[0].strip()
+        if not first:
+            lines.pop(0)
+            continue
+        if any(first.startswith(p) for p in lead_prefixes):
+            lines.pop(0)
+            continue
+        if set(first) <= {"-", "*", "—", "=", " "}:
+            lines.pop(0)
+            continue
+        break
+
+    # Cut tail "if you want, I can continue..." assistant chatter.
+    tail_prefixes = (
+        "如需",
+        "如果你愿意",
+        "如果需要",
+        "若需",
+        "我还可以",
+        "你还可以",
+    )
+    cut_at = None
+    for idx, line in enumerate(lines):
+        s = line.strip()
+        if any(s.startswith(p) for p in tail_prefixes):
+            cut_at = idx
+            break
+    if cut_at is not None:
+        lines = lines[:cut_at]
+
+    # Remove explicit temporary sections.
+    filtered: List[str] = []
+    for line in lines:
+        s = line.strip()
+        if s in ("## LLM 扩展草案", "# LLM 扩展草案"):
+            continue
+        if re.fullmatch(r"[\-*_=]{3,}", s):
+            continue
+        filtered.append(line.rstrip())
+
+    # Trim empty borders.
+    while filtered and not filtered[0].strip():
+        filtered.pop(0)
+    while filtered and not filtered[-1].strip():
+        filtered.pop()
+    return "\n".join(filtered).strip()
 
 
 def _build_disclosure_context(ctx: StageContext) -> Dict[str, Any]:
@@ -164,6 +231,257 @@ def _render_disclosure_outline(ctx: StageContext) -> str:
     )
 
 
+def _render_system_architecture(ctx: StageContext) -> str:
+    t = _topic(ctx)
+    sid = _selected_direction_id(ctx)
+    return (
+        "# 系统架构描述\n\n"
+        f"- 主题: {t}\n"
+        f"- 选定方向ID: {sid}\n\n"
+        "## 架构分层\n"
+        "1. 接入与协商层：负责协议协商、能力声明、版本与算法策略匹配。\n"
+        "2. 密钥与证书层：负责证书链验证、密钥交换、会话密钥派生与生命周期管理。\n"
+        "3. 数据与策略层：负责数据面加解密、策略执行、审计与告警。\n\n"
+        "## 核心模块\n"
+        "- 协商控制模块：维护握手状态机，控制协商步骤与回退策略。\n"
+        "- 密钥管理模块：统一管理经典/抗量子密钥材料、派生与轮换。\n"
+        "- 证书与信任模块：实现证书解析、链验证、撤销状态检查。\n"
+        "- 策略编排模块：按场景下发策略并驱动数据面执行。\n"
+        "- 可观测性模块：输出性能指标、安全事件与变更审计记录。\n"
+    )
+
+
+def _render_process_stages(ctx: StageContext) -> str:
+    t = _topic(ctx)
+    return (
+        "# 流程与详细阶段描述\n\n"
+        f"以下流程围绕“{t}”的工程落地定义：\n\n"
+        "1. 阶段A 连接初始化：加载策略、证书链与算法能力配置。\n"
+        "2. 阶段B 能力协商：客户端/服务端交换能力并确定协商路径。\n"
+        "3. 阶段C 身份验证：完成证书链验证、撤销状态检查与失败分支处理。\n"
+        "4. 阶段D 密钥协商与派生：执行密钥交换并生成握手密钥、会话密钥。\n"
+        "5. 阶段E 加密通信建立：完成握手确认并切换到应用数据保护。\n"
+        "6. 阶段F 运行期治理：执行密钥轮换、策略更新、异常告警与审计归档。\n\n"
+        "## 失败与回退处理\n"
+        "- 协商失败：记录失败原因，触发回退策略或中止连接。\n"
+        "- 证书失败：拒绝连接并输出可追踪审计事件。\n"
+        "- 性能退化：切换策略档位并上报关键性能指标。\n"
+    )
+
+
+def _render_figures_and_tables_plan(ctx: StageContext) -> str:
+    sid = _selected_direction_id(ctx)
+    image_hints = []
+    arch_img = str(ctx.metadata.get("architecture_image_path") or "").strip()
+    flow_img = str(ctx.metadata.get("process_image_path") or "").strip()
+    if arch_img:
+        image_hints.append(f"- 架构图图片: {arch_img}")
+    if flow_img:
+        image_hints.append(f"- 流程图图片: {flow_img}")
+    image_section = "\n".join(image_hints) if image_hints else "- 图片渲染：当前环境未生成（缺少 mmdc 时属预期）。"
+    return (
+        "# 附图与图表计划\n\n"
+        f"面向方向ID {sid}，建议在交底书与说明书中包含以下图表：\n\n"
+        "## 附图清单\n"
+        "1. 图1 系统总体架构图（模块关系与边界）。\n"
+        "2. 图2 握手协商时序图（请求、响应、校验、完成）。\n"
+        "3. 图3 密钥派生流程图（输入、派生、输出与更新）。\n"
+        "4. 图4 运行期策略执行流程图（策略下发、执行、反馈、告警）。\n\n"
+        "## 图表说明（文字版）\n"
+        "| 编号 | 图表名称 | 说明 |\n"
+        "| --- | --- | --- |\n"
+        "| 图1 | 系统总体架构图 | 展示协商层、密钥层、数据层及其接口关系。 |\n"
+        "| 图2 | 握手协商时序图 | 展示从能力协商到握手完成的关键消息序列。 |\n"
+        "| 图3 | 密钥派生流程图 | 展示密钥交换输入与派生输出链路。 |\n"
+        "| 图4 | 策略执行流程图 | 展示策略驱动与异常处理闭环。 |\n\n"
+        "## 产物文件（ASCII -> Mermaid -> Image）\n"
+        "- ASCII 架构图: artifacts/architecture_ascii.txt\n"
+        "- ASCII 流程图: artifacts/process_flow_ascii.txt\n"
+        "- Mermaid 架构图: artifacts/architecture.mmd\n"
+        "- Mermaid 流程图: artifacts/process_flow.mmd\n"
+        f"{image_section}\n"
+    )
+
+
+def _render_structured_appendix(
+    *,
+    architecture_text: str,
+    process_text: str,
+    figures_text: str,
+) -> str:
+    arch = _strip_first_heading(architecture_text)
+    process = _strip_first_heading(process_text)
+    figures = _strip_first_heading(figures_text)
+    return (
+        "## 系统架构描述（补充）\n\n"
+        f"{arch}\n\n"
+        "## 关键流程与阶段说明（补充）\n\n"
+        f"{process}\n\n"
+        "## 附图与图表说明（补充）\n\n"
+        f"{figures}\n"
+    )
+
+
+def _strip_first_heading(text: str) -> str:
+    lines = str(text or "").strip().splitlines()
+    if not lines:
+        return ""
+    if lines[0].lstrip().startswith("#"):
+        lines = lines[1:]
+    return "\n".join(lines).strip()
+
+
+def _render_architecture_ascii(ctx: StageContext) -> str:
+    sid = _selected_direction_id(ctx)
+    return (
+        "Anti-Quantum SSL/TLS System Architecture\n"
+        "=======================================\n"
+        f"Direction: {sid}\n\n"
+        "Client\n"
+        "  |\n"
+        "  | 1) Capability + Hello\n"
+        "  v\n"
+        "+------------------------+        +----------------------+\n"
+        "| Negotiation Controller | <----> | Policy Orchestrator  |\n"
+        "+------------------------+        +----------------------+\n"
+        "            |\n"
+        "            | 2) Certificate & Key Exchange\n"
+        "            v\n"
+        "+------------------------+        +----------------------+\n"
+        "| Cert/Trust Validator   | <----> | Key Management (PQC) |\n"
+        "+------------------------+        +----------------------+\n"
+        "            |\n"
+        "            | 3) Session Keys\n"
+        "            v\n"
+        "+------------------------+\n"
+        "| Data Plane Encryptor   |\n"
+        "+------------------------+\n"
+        "            |\n"
+        "            v\n"
+        "       Secure Tunnel\n"
+    )
+
+
+def _render_process_ascii(ctx: StageContext) -> str:
+    return (
+        "PQC SSL/TLS Runtime Flow\n"
+        "========================\n"
+        "[A] Init Policy/Cert/Algo\n"
+        "   |\n"
+        "[B] Capability Negotiation\n"
+        "   |\n"
+        "[C] Certificate Verification\n"
+        "   |--fail--> [Abort + Audit]\n"
+        "   |\n"
+        "[D] Hybrid Key Exchange + Derive Keys\n"
+        "   |\n"
+        "[E] Secure Session Established\n"
+        "   |\n"
+        "[F] Runtime Governance (rotate/update/alert)\n"
+    )
+
+
+def _render_architecture_mermaid(ctx: StageContext) -> str:
+    return (
+        "flowchart TD\n"
+        "    C[Client] --> N[Negotiation Controller]\n"
+        "    N <--> P[Policy Orchestrator]\n"
+        "    N --> V[Cert/Trust Validator]\n"
+        "    V <--> K[Key Management PQC]\n"
+        "    V --> D[Data Plane Encryptor]\n"
+        "    D --> T[Secure Tunnel]\n"
+    )
+
+
+def _render_process_mermaid(ctx: StageContext) -> str:
+    return (
+        "flowchart TD\n"
+        "    A[Init Policy Cert Algo] --> B[Capability Negotiation]\n"
+        "    B --> C[Certificate Verification]\n"
+        "    C -->|ok| D[Hybrid Key Exchange and Derivation]\n"
+        "    C -->|fail| X[Abort and Audit]\n"
+        "    D --> E[Secure Session Established]\n"
+        "    E --> F[Runtime Governance]\n"
+    )
+
+
+def _try_render_mermaid_png(mermaid_path: Path) -> Optional[Path]:
+    mmdc = shutil.which("mmdc")
+    if not mmdc:
+        return None
+    output = mermaid_path.with_suffix(".png")
+    cmd = [mmdc, "-i", str(mermaid_path), "-o", str(output)]
+    temp_cfg_path: Optional[str] = None
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        cfg_payload = {"args": ["--no-sandbox", "--disable-setuid-sandbox"]}
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False, encoding="utf-8"
+        ) as fp:
+            fp.write(json.dumps(cfg_payload, ensure_ascii=False))
+            temp_cfg_path = fp.name
+        cmd = [mmdc, "-p", temp_cfg_path, "-i", str(mermaid_path), "-o", str(output)]
+    try:
+        subprocess.run(
+            cmd,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=60,
+        )
+    except (subprocess.SubprocessError, OSError):
+        return None
+    finally:
+        if temp_cfg_path:
+            try:
+                Path(temp_cfg_path).unlink(missing_ok=True)
+            except OSError:
+                pass
+    return output if output.exists() else None
+
+
+def _render_diagram_appendix(ctx: StageContext) -> str:
+    arch_ascii = _read_text_if_exists(_safe_artifact_source(ctx, "architecture_ascii_path")) or ""
+    flow_ascii = _read_text_if_exists(_safe_artifact_source(ctx, "process_ascii_path")) or ""
+    arch_mermaid = _read_text_if_exists(_safe_artifact_source(ctx, "architecture_mermaid_path")) or ""
+    flow_mermaid = _read_text_if_exists(_safe_artifact_source(ctx, "process_mermaid_path")) or ""
+    arch_img = str(ctx.metadata.get("architecture_image_path") or "").strip()
+    flow_img = str(ctx.metadata.get("process_image_path") or "").strip()
+
+    lines = [
+        "## 图示与流程图（生成产物）",
+        "",
+        "### 架构图（ASCII）",
+        "```text",
+        arch_ascii.strip() or "(not generated)",
+        "```",
+        "",
+        "### 流程图（ASCII）",
+        "```text",
+        flow_ascii.strip() or "(not generated)",
+        "```",
+        "",
+        "### 架构图（Mermaid）",
+        "```mermaid",
+        arch_mermaid.strip() or "flowchart TD\n    A[not generated]",
+        "```",
+        "",
+        "### 流程图（Mermaid）",
+        "```mermaid",
+        flow_mermaid.strip() or "flowchart TD\n    A[not generated]",
+        "```",
+        "",
+        "### 图片文件（可选）",
+    ]
+    if arch_img:
+        lines.append(f"- 架构图图片: {arch_img}")
+    if flow_img:
+        lines.append(f"- 流程图图片: {flow_img}")
+    if not arch_img and not flow_img:
+        lines.append("- 当前环境未生成 PNG（通常是未安装 `mmdc`）。")
+    return "\n".join(lines).strip()
+
+
 def _render_disclosure_validation_report(ctx: StageContext) -> str:
     t = _topic(ctx)
     return (
@@ -197,7 +515,7 @@ def _render_claims_draft(ctx: StageContext) -> str:
         "请输出权利要求书草案，至少3条，包含1条独立权利要求与2条从属权利要求。"
     )
     generated = _try_llm_text(ctx=ctx, task="claims_draft", prompt=prompt, fallback=fallback)
-    return generated
+    return _sanitize_llm_output(task="claims_draft", text=generated)
 
 
 def _render_spec_draft(ctx: StageContext) -> str:
@@ -212,10 +530,27 @@ def _render_spec_draft(ctx: StageContext) -> str:
     )
     prompt = (
         f"主题：{_topic(ctx)}\n"
-        "请输出说明书草案，包含背景技术、发明内容、附图说明、具体实施方式四节。"
+        "请输出说明书草案，包含背景技术、发明内容、附图说明、具体实施方式四节，"
+        "并显式写出系统架构、流程阶段与图表说明。"
     )
     generated = _try_llm_text(ctx=ctx, task="spec_draft", prompt=prompt, fallback=fallback)
-    return generated
+    generated = _sanitize_llm_output(task="spec_draft", text=generated)
+    architecture_text = _read_text_if_exists(_safe_artifact_source(ctx, "system_architecture_path")) or _render_system_architecture(
+        ctx
+    )
+    process_text = _read_text_if_exists(_safe_artifact_source(ctx, "process_stages_path")) or _render_process_stages(
+        ctx
+    )
+    figures_text = _read_text_if_exists(
+        _safe_artifact_source(ctx, "figures_and_tables_plan_path")
+    ) or _render_figures_and_tables_plan(ctx)
+    appendix = _render_structured_appendix(
+        architecture_text=architecture_text,
+        process_text=process_text,
+        figures_text=figures_text,
+    )
+    diagram_appendix = _render_diagram_appendix(ctx)
+    return f"{generated.strip()}\n\n{appendix}\n\n{diagram_appendix}"
 
 
 def _render_patent_legal_validate(ctx: StageContext) -> str:
@@ -255,7 +590,7 @@ def _render_oa_response_playbook_draft(ctx: StageContext) -> str:
         "请输出中文审查意见答复剧本，包含意见分类、答复策略、证据映射、修改建议。"
     )
     generated = _try_llm_text(ctx=ctx, task="oa_response_playbook", prompt=prompt, fallback=fallback)
-    return generated
+    return _sanitize_llm_output(task="oa_response_playbook", text=generated)
 
 
 @dataclass
@@ -305,7 +640,19 @@ class _Stage06DisclosureOutlineStage:
     stage_id: str = "STAGE_06"
     requires: list[str] = field(default_factory=lambda: ["selected_direction_id"])
     produces: list[str] = field(
-        default_factory=lambda: ["disclosure_outline_path", "disclosure_context_path"]
+        default_factory=lambda: [
+            "disclosure_outline_path",
+            "disclosure_context_path",
+            "system_architecture_path",
+            "process_stages_path",
+            "figures_and_tables_plan_path",
+            "architecture_ascii_path",
+            "process_ascii_path",
+            "architecture_mermaid_path",
+            "process_mermaid_path",
+            "architecture_image_path",
+            "process_image_path",
+        ]
     )
 
     def run(self, ctx: StageContext) -> StageResult:
@@ -316,14 +663,55 @@ class _Stage06DisclosureOutlineStage:
         context_path = ctx.work_dir / "artifacts" / "disclosure_context.json"
         _atomic_write_json(context_path, disclosure_context)
 
+        architecture_path = ctx.work_dir / "artifacts" / "system_architecture.md"
+        process_path = ctx.work_dir / "artifacts" / "process_stages.md"
+        arch_ascii_path = ctx.work_dir / "artifacts" / "architecture_ascii.txt"
+        flow_ascii_path = ctx.work_dir / "artifacts" / "process_flow_ascii.txt"
+        arch_mermaid_path = ctx.work_dir / "artifacts" / "architecture.mmd"
+        flow_mermaid_path = ctx.work_dir / "artifacts" / "process_flow.mmd"
+        _atomic_write_text(architecture_path, _render_system_architecture(ctx))
+        _atomic_write_text(process_path, _render_process_stages(ctx))
+        _atomic_write_text(arch_ascii_path, _render_architecture_ascii(ctx))
+        _atomic_write_text(flow_ascii_path, _render_process_ascii(ctx))
+        _atomic_write_text(arch_mermaid_path, _render_architecture_mermaid(ctx))
+        _atomic_write_text(flow_mermaid_path, _render_process_mermaid(ctx))
+        arch_image_path = _try_render_mermaid_png(arch_mermaid_path)
+        flow_image_path = _try_render_mermaid_png(flow_mermaid_path)
+        if arch_image_path is not None:
+            ctx.metadata["architecture_image_path"] = str(arch_image_path)
+        else:
+            ctx.metadata["architecture_image_path"] = None
+        if flow_image_path is not None:
+            ctx.metadata["process_image_path"] = str(flow_image_path)
+        else:
+            ctx.metadata["process_image_path"] = None
+        figures_path = ctx.work_dir / "artifacts" / "figures_and_tables_plan.md"
+        _atomic_write_text(figures_path, _render_figures_and_tables_plan(ctx))
+
         ctx.metadata["disclosure_outline_path"] = str(outline_path)
         ctx.metadata["disclosure_context_path"] = str(context_path)
+        ctx.metadata["system_architecture_path"] = str(architecture_path)
+        ctx.metadata["process_stages_path"] = str(process_path)
+        ctx.metadata["figures_and_tables_plan_path"] = str(figures_path)
+        ctx.metadata["architecture_ascii_path"] = str(arch_ascii_path)
+        ctx.metadata["process_ascii_path"] = str(flow_ascii_path)
+        ctx.metadata["architecture_mermaid_path"] = str(arch_mermaid_path)
+        ctx.metadata["process_mermaid_path"] = str(flow_mermaid_path)
 
         return StageResult(
             produces=list(self.produces),
             outputs={
                 "disclosure_outline_path": str(outline_path),
                 "disclosure_context_path": str(context_path),
+                "system_architecture_path": str(architecture_path),
+                "process_stages_path": str(process_path),
+                "figures_and_tables_plan_path": str(figures_path),
+                "architecture_ascii_path": str(arch_ascii_path),
+                "process_ascii_path": str(flow_ascii_path),
+                "architecture_mermaid_path": str(arch_mermaid_path),
+                "process_mermaid_path": str(flow_mermaid_path),
+                "architecture_image_path": str(arch_image_path) if arch_image_path else None,
+                "process_image_path": str(flow_image_path) if flow_image_path else None,
             },
         )
 
@@ -352,11 +740,30 @@ class _RenderDisclosureStage:
             "请基于给定技术背景补充一段技术交底书扩展内容，突出技术效果与实施要点。"
         )
         llm_extra = _try_llm_text(ctx=ctx, task="disclosure_draft", prompt=llm_prompt, fallback="")
+        llm_extra = _sanitize_llm_output(task="disclosure_draft", text=llm_extra)
         markdown_body = rendered.markdown
         docx_markdown_body = rendered.docx_markdown
         if llm_extra.strip():
-            markdown_body = f"{markdown_body}\n\n## LLM 扩展草案\n{llm_extra.strip()}\n"
-            docx_markdown_body = f"{docx_markdown_body}\n\n## LLM 扩展草案\n{llm_extra.strip()}\n"
+            markdown_body = f"{markdown_body}\n\n## 技术扩展内容\n{llm_extra.strip()}\n"
+            docx_markdown_body = f"{docx_markdown_body}\n\n## 技术扩展内容\n{llm_extra.strip()}\n"
+
+        architecture_text = _read_text_if_exists(_safe_artifact_source(ctx, "system_architecture_path")) or _render_system_architecture(
+            ctx
+        )
+        process_text = _read_text_if_exists(_safe_artifact_source(ctx, "process_stages_path")) or _render_process_stages(
+            ctx
+        )
+        figures_text = _read_text_if_exists(
+            _safe_artifact_source(ctx, "figures_and_tables_plan_path")
+        ) or _render_figures_and_tables_plan(ctx)
+        appendix = _render_structured_appendix(
+            architecture_text=architecture_text,
+            process_text=process_text,
+            figures_text=figures_text,
+        )
+        diagram_appendix = _render_diagram_appendix(ctx)
+        markdown_body = f"{markdown_body}\n\n{appendix}\n\n{diagram_appendix}"
+        docx_markdown_body = f"{docx_markdown_body}\n\n{appendix}\n\n{diagram_appendix}"
 
         markdown_path = ctx.work_dir / "artifacts" / "disclosure.md"
         docx_path = ctx.work_dir / "artifacts" / "disclosure.docx"
@@ -398,6 +805,15 @@ class DeliverablesExportStage:
             "deliverables_disclosure_docx_path",
             "deliverables_oa_response_playbook_path",
             "deliverables_disclosure_validation_report_path",
+            "deliverables_system_architecture_path",
+            "deliverables_process_stages_path",
+            "deliverables_figures_and_tables_plan_path",
+            "deliverables_architecture_ascii_path",
+            "deliverables_process_ascii_path",
+            "deliverables_architecture_mermaid_path",
+            "deliverables_process_mermaid_path",
+            "deliverables_architecture_image_path",
+            "deliverables_process_image_path",
             "final_package_dir",
         ]
     )
@@ -422,6 +838,27 @@ class DeliverablesExportStage:
         novelty_content = _read_text_if_exists(
             _safe_artifact_source(ctx, "novelty_risk_report_path")
         ) or _render_novelty_risk_report(ctx)
+        architecture_content = _read_text_if_exists(
+            _safe_artifact_source(ctx, "system_architecture_path")
+        ) or _render_system_architecture(ctx)
+        process_content = _read_text_if_exists(
+            _safe_artifact_source(ctx, "process_stages_path")
+        ) or _render_process_stages(ctx)
+        figures_content = _read_text_if_exists(
+            _safe_artifact_source(ctx, "figures_and_tables_plan_path")
+        ) or _render_figures_and_tables_plan(ctx)
+        arch_ascii_content = _read_text_if_exists(
+            _safe_artifact_source(ctx, "architecture_ascii_path")
+        ) or _render_architecture_ascii(ctx)
+        flow_ascii_content = _read_text_if_exists(
+            _safe_artifact_source(ctx, "process_ascii_path")
+        ) or _render_process_ascii(ctx)
+        arch_mermaid_content = _read_text_if_exists(
+            _safe_artifact_source(ctx, "architecture_mermaid_path")
+        ) or _render_architecture_mermaid(ctx)
+        flow_mermaid_content = _read_text_if_exists(
+            _safe_artifact_source(ctx, "process_mermaid_path")
+        ) or _render_process_mermaid(ctx)
 
         out_dir = ctx.work_dir / "deliverables"
         final_package_dir = ctx.work_dir / "final_package"
@@ -433,6 +870,15 @@ class DeliverablesExportStage:
         claims_out = out_dir / "claims_draft.md"
         spec_out = out_dir / "spec_draft.md"
         novelty_out = out_dir / "novelty_risk_report.md"
+        architecture_out = out_dir / "system_architecture.md"
+        process_out = out_dir / "process_stages.md"
+        figures_out = out_dir / "figures_and_tables_plan.md"
+        arch_ascii_out = out_dir / "architecture_ascii.txt"
+        flow_ascii_out = out_dir / "process_flow_ascii.txt"
+        arch_mermaid_out = out_dir / "architecture.mmd"
+        flow_mermaid_out = out_dir / "process_flow.mmd"
+        arch_image_out = out_dir / "architecture.png"
+        flow_image_out = out_dir / "process_flow.png"
 
         _atomic_write_text(disclosure_out, disclosure_content)
         _atomic_write_text(disclosure_docx_out, disclosure_docx_content)
@@ -441,6 +887,24 @@ class DeliverablesExportStage:
         _atomic_write_text(claims_out, claims_content)
         _atomic_write_text(spec_out, spec_content)
         _atomic_write_text(novelty_out, novelty_content)
+        _atomic_write_text(architecture_out, architecture_content)
+        _atomic_write_text(process_out, process_content)
+        _atomic_write_text(figures_out, figures_content)
+        _atomic_write_text(arch_ascii_out, arch_ascii_content)
+        _atomic_write_text(flow_ascii_out, flow_ascii_content)
+        _atomic_write_text(arch_mermaid_out, arch_mermaid_content)
+        _atomic_write_text(flow_mermaid_out, flow_mermaid_content)
+
+        src_arch_image = _safe_artifact_source(ctx, "architecture_image_path")
+        src_flow_image = _safe_artifact_source(ctx, "process_image_path")
+        has_arch_image = bool(src_arch_image and src_arch_image.exists())
+        has_flow_image = bool(src_flow_image and src_flow_image.exists())
+        if has_arch_image and src_arch_image is not None:
+            arch_image_out.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src_arch_image, arch_image_out)
+        if has_flow_image and src_flow_image is not None:
+            flow_image_out.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src_flow_image, flow_image_out)
 
         _atomic_write_text(final_package_dir / "disclosure.md", disclosure_content)
         _atomic_write_text(final_package_dir / "disclosure.docx", disclosure_docx_content)
@@ -449,11 +913,31 @@ class DeliverablesExportStage:
         _atomic_write_text(final_package_dir / "claims_draft.md", claims_content)
         _atomic_write_text(final_package_dir / "spec_draft.md", spec_content)
         _atomic_write_text(final_package_dir / "novelty_risk_report.md", novelty_content)
+        _atomic_write_text(final_package_dir / "system_architecture.md", architecture_content)
+        _atomic_write_text(final_package_dir / "process_stages.md", process_content)
+        _atomic_write_text(final_package_dir / "figures_and_tables_plan.md", figures_content)
+        _atomic_write_text(final_package_dir / "architecture_ascii.txt", arch_ascii_content)
+        _atomic_write_text(final_package_dir / "process_flow_ascii.txt", flow_ascii_content)
+        _atomic_write_text(final_package_dir / "architecture.mmd", arch_mermaid_content)
+        _atomic_write_text(final_package_dir / "process_flow.mmd", flow_mermaid_content)
+        if has_arch_image:
+            shutil.copy2(arch_image_out, final_package_dir / "architecture.png")
+        if has_flow_image:
+            shutil.copy2(flow_image_out, final_package_dir / "process_flow.png")
 
         ctx.metadata["deliverables_disclosure_path"] = str(disclosure_out)
         ctx.metadata["deliverables_disclosure_docx_path"] = str(disclosure_docx_out)
         ctx.metadata["deliverables_oa_response_playbook_path"] = str(playbook_out)
         ctx.metadata["deliverables_disclosure_validation_report_path"] = str(validation_out)
+        ctx.metadata["deliverables_system_architecture_path"] = str(architecture_out)
+        ctx.metadata["deliverables_process_stages_path"] = str(process_out)
+        ctx.metadata["deliverables_figures_and_tables_plan_path"] = str(figures_out)
+        ctx.metadata["deliverables_architecture_ascii_path"] = str(arch_ascii_out)
+        ctx.metadata["deliverables_process_ascii_path"] = str(flow_ascii_out)
+        ctx.metadata["deliverables_architecture_mermaid_path"] = str(arch_mermaid_out)
+        ctx.metadata["deliverables_process_mermaid_path"] = str(flow_mermaid_out)
+        ctx.metadata["deliverables_architecture_image_path"] = str(arch_image_out) if has_arch_image else None
+        ctx.metadata["deliverables_process_image_path"] = str(flow_image_out) if has_flow_image else None
         ctx.metadata["final_package_dir"] = str(final_package_dir)
 
         return StageResult(
@@ -463,6 +947,15 @@ class DeliverablesExportStage:
                 "deliverables_disclosure_docx_path": str(disclosure_docx_out),
                 "deliverables_oa_response_playbook_path": str(playbook_out),
                 "deliverables_disclosure_validation_report_path": str(validation_out),
+                "deliverables_system_architecture_path": str(architecture_out),
+                "deliverables_process_stages_path": str(process_out),
+                "deliverables_figures_and_tables_plan_path": str(figures_out),
+                "deliverables_architecture_ascii_path": str(arch_ascii_out),
+                "deliverables_process_ascii_path": str(flow_ascii_out),
+                "deliverables_architecture_mermaid_path": str(arch_mermaid_out),
+                "deliverables_process_mermaid_path": str(flow_mermaid_out),
+                "deliverables_architecture_image_path": str(arch_image_out) if has_arch_image else None,
+                "deliverables_process_image_path": str(flow_image_out) if has_flow_image else None,
                 "final_package_dir": str(final_package_dir),
             },
         )

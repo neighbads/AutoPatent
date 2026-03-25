@@ -1,0 +1,13 @@
+{
+  "checkpoint_root": "./state",
+  "search_provider": "offline",
+  "llm": {
+    "provider": "openai-compatible",
+    "base_url": "http://10.20.35.182:13456/v1",
+    "api_key_env": "OPENAI_API_KEY",
+    "model": "gpt-5.4",
+    "timeout_sec": 600,
+    "max_tokens": 8192,
+    "temperature": 0.2
+  }
+}
