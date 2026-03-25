@@ -33,6 +33,7 @@ def run(
     output: Optional[Path] = None,
     code_dir: Optional[Path] = None,
     resume: bool = False,
+    auto_approve: bool = typer.Option(False, "--auto-approve"),
     template: Optional[str] = None,
 ) -> None:
     """Run the CN MVP pipeline (STAGE_00 -> STAGE_15)."""
@@ -57,6 +58,7 @@ def run(
         input_doc=input_doc,
         code_dir=code_dir,
         template_name=selected_template,
+        auto_approve=auto_approve,
     )
     start_idx = 0
     if resume:
@@ -67,6 +69,7 @@ def run(
         )
         if resumed_metadata is not None:
             metadata = resumed_metadata
+            _apply_run_mode(metadata, auto_approve=auto_approve)
         if start_idx >= len(stages):
             typer.echo("Checkpoint indicates all stages are already complete. Nothing to resume.")
             return
@@ -80,9 +83,11 @@ def run(
         except Exception:
             checkpoints.save(stage_id=stage.stage_id, status="failed")
             _write_metadata_snapshot(state_dir=state_dir, stage_id=stage.stage_id, metadata=ctx.metadata)
+            _write_human_decisions(state_dir=state_dir, stage_id=stage.stage_id, metadata=ctx.metadata)
             raise
         checkpoints.save(stage_id=stage.stage_id, status="done")
         _write_metadata_snapshot(state_dir=state_dir, stage_id=stage.stage_id, metadata=ctx.metadata)
+        _write_human_decisions(state_dir=state_dir, stage_id=stage.stage_id, metadata=ctx.metadata)
         typer.echo(f"[{stage.stage_id}] done")
 
     typer.echo("Pipeline complete")
@@ -105,17 +110,26 @@ def _initial_metadata(
     input_doc: Optional[Path],
     code_dir: Optional[Path],
     template_name: str,
+    auto_approve: bool,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "topic": topic,
         "input_doc": str(input_doc.expanduser().resolve()) if input_doc else None,
         "code_dir": str(code_dir.expanduser().resolve()) if code_dir else None,
         "template": template_name,
-        # Default to unattended runs in CLI to avoid blocking prompt.
-        "non_interactive": True,
-        "selected_direction_id": _DEFAULT_SELECTED_DIRECTION_ID,
     }
+    _apply_run_mode(payload, auto_approve=auto_approve)
     return _to_jsonable(payload)
+
+
+def _apply_run_mode(metadata: dict[str, Any], *, auto_approve: bool) -> None:
+    if auto_approve:
+        metadata["non_interactive"] = True
+        selected = str(metadata.get("selected_direction_id") or "").strip()
+        if not selected:
+            metadata["selected_direction_id"] = _DEFAULT_SELECTED_DIRECTION_ID
+        return
+    metadata["non_interactive"] = False
 
 
 def _resume_state(
@@ -169,6 +183,31 @@ def _write_metadata_snapshot(*, state_dir: Path, stage_id: str, metadata: dict[s
     text = json.dumps(serializable, ensure_ascii=False, indent=2)
     path.write_text(text, encoding="utf-8")
     (state_dir / "metadata_latest.json").write_text(text, encoding="utf-8")
+
+
+def _write_human_decisions(*, state_dir: Path, stage_id: str, metadata: dict[str, Any]) -> None:
+    if stage_id != "STAGE_04":
+        return
+    selected = metadata.get("selected_direction_id")
+    if selected is None:
+        return
+
+    record = {
+        "selected_direction_id": str(selected),
+        "decision_path": metadata.get("direction_gate_decision_path"),
+    }
+    path = state_dir / "human_decisions.json"
+    if path.exists():
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Malformed human decisions file at {path}: {exc}") from exc
+        if not isinstance(payload, dict):
+            raise ValueError(f"human_decisions.json must contain a JSON object: {path}")
+    else:
+        payload = {}
+    payload["STAGE_04"] = record
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _to_jsonable(payload: dict[str, Any]) -> dict[str, Any]:

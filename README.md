@@ -13,22 +13,28 @@ AutoPatent 是一个面向中国发明专利撰写流程的自动化程序。
 
 以下示例为当前可执行用法：
 
-1. 主题驱动运行：
+1. 交互式运行（默认，Stage 04 需要输入 `choose <id>`）：
 
 ```
 python -m autopatent.cli run --topic "示例主题" --output ./artifacts/demo
 ```
 
-2. 文档 + 代码目录输入：
+2. 自动批准运行（非交互）：
 
 ```
-python -m autopatent.cli run --input-doc ./seed.md --code-dir ./impl --resume
+python -m autopatent.cli run --topic "示例主题" --output ./artifacts/demo --auto-approve
 ```
 
-3. 中断后继续执行：
+3. 文档 + 代码目录输入：
 
 ```
-python -m autopatent.cli run --topic "示例主题" --output ./artifacts/demo --resume
+python -m autopatent.cli run --input-doc ./seed.md --code-dir ./impl --auto-approve
+```
+
+4. 中断后继续执行：
+
+```
+python -m autopatent.cli run --topic "示例主题" --output ./artifacts/demo --resume --auto-approve
 ```
 
 ## 输出目录说明
@@ -40,6 +46,13 @@ python -m autopatent.cli run --topic "示例主题" --output ./artifacts/demo --
 3. `./artifacts/demo/state/checkpoint_history.json`
 4. `./artifacts/demo/state/metadata_latest.json`
 5. `./artifacts/demo/state/metadata/STAGE_XX.json`（各阶段快照）
+6. `./artifacts/demo/state/human_decisions.json`（人工关卡决策记录）
+7. `./artifacts/demo/artifacts/direction_analysis_report.md`
+8. `./artifacts/demo/artifacts/prior_art_evidence.jsonl`
+9. `./artifacts/demo/artifacts/direction_scores.json`
+10. `./artifacts/demo/artifacts/disclosure_context.json`
+11. `./artifacts/demo/deliverables/disclosure_validation_report.md`
+12. `./artifacts/demo/final_package/`
 
 ## 默认模板行为
 

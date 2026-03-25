@@ -17,12 +17,25 @@ def test_run_generates_deliverables_and_checkpoints(tmp_path):
 
     result = runner.invoke(
         app,
-        ["run", "--topic", "国密 TLCP / IPSec 混合抗量子方案", "--output", str(output_dir)],
+        [
+            "run",
+            "--topic",
+            "国密 TLCP / IPSec 混合抗量子方案",
+            "--output",
+            str(output_dir),
+            "--auto-approve",
+        ],
     )
 
     assert result.exit_code == 0
     assert (output_dir / "deliverables" / "disclosure.md").exists()
     assert (output_dir / "deliverables" / "oa_response_playbook.md").exists()
+    assert (output_dir / "deliverables" / "disclosure_validation_report.md").exists()
+    assert (output_dir / "final_package").exists()
+    assert (output_dir / "artifacts" / "direction_analysis_report.md").exists()
+    assert (output_dir / "artifacts" / "prior_art_evidence.jsonl").exists()
+    assert (output_dir / "artifacts" / "direction_scores.json").exists()
+    assert (output_dir / "artifacts" / "disclosure_context.json").exists()
 
     history = _read_checkpoint_history(output_dir)
     assert history[0]["stage_id"] == "STAGE_00"
@@ -34,6 +47,11 @@ def test_run_generates_deliverables_and_checkpoints(tmp_path):
     latest_metadata = output_dir / "state" / "metadata_latest.json"
     assert latest_metadata.exists()
 
+    human_decisions = output_dir / "state" / "human_decisions.json"
+    assert human_decisions.exists()
+    payload = json.loads(human_decisions.read_text(encoding="utf-8"))
+    assert payload["STAGE_04"]["selected_direction_id"] == "2"
+
 
 def test_resume_continues_from_latest_done_stage(tmp_path):
     runner = CliRunner()
@@ -41,7 +59,7 @@ def test_resume_continues_from_latest_done_stage(tmp_path):
 
     first = runner.invoke(
         app,
-        ["run", "--topic", "后量子 IPsec", "--output", str(output_dir)],
+        ["run", "--topic", "后量子 IPsec", "--output", str(output_dir), "--auto-approve"],
     )
     assert first.exit_code == 0
 
@@ -52,7 +70,15 @@ def test_resume_continues_from_latest_done_stage(tmp_path):
 
     resumed = runner.invoke(
         app,
-        ["run", "--topic", "后量子 IPsec", "--output", str(output_dir), "--resume"],
+        [
+            "run",
+            "--topic",
+            "后量子 IPsec",
+            "--output",
+            str(output_dir),
+            "--resume",
+            "--auto-approve",
+        ],
     )
     assert resumed.exit_code == 0
 

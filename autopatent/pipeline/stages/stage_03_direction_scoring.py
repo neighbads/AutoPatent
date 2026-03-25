@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List
 
 from autopatent.pipeline import StageContext, StageResult
@@ -26,7 +28,11 @@ class DirectionScoringStage:
         default_factory=lambda: ["direction_candidates", "prior_art_resources"]
     )
     produces: list[str] = field(
-        default_factory=lambda: ["direction_candidates", "direction_candidates_scored"]
+        default_factory=lambda: [
+            "direction_candidates",
+            "direction_candidates_scored",
+            "direction_scores_path",
+        ]
     )
 
     weak_score_threshold: float = 0.5
@@ -52,7 +58,22 @@ class DirectionScoringStage:
 
         ctx.metadata["direction_candidates"] = scored
         ctx.metadata["direction_candidates_scored"] = scored
+        scores_path = _write_direction_scores(work_dir=ctx.work_dir, scored=scored)
+        ctx.metadata["direction_scores_path"] = str(scores_path)
 
         result = StageResult(produces=list(self.produces))
-        result.outputs = {"direction_candidates_scored": scored}
+        result.outputs = {
+            "direction_candidates_scored": scored,
+            "direction_scores_path": str(scores_path),
+        }
         return result
+
+
+def _write_direction_scores(*, work_dir: Path, scored: List[Dict[str, Any]]) -> Path:
+    payload = {
+        "candidates": scored,
+    }
+    path = work_dir / "artifacts" / "direction_scores.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return path
