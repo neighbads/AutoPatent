@@ -57,6 +57,8 @@ python -m autopatent.cli run --topic "示例主题" --output ./artifacts/demo --
 13. `./artifacts/demo/final_package/`
 14. `./artifacts/demo/artifacts/prior_art_queries.json`
 15. `./artifacts/demo/artifacts/search_meta.json`
+16. `./artifacts/demo/artifacts/input_doc_digest.md`（当传入 `--input-doc` 时）
+17. `./artifacts/demo/artifacts/code_inventory.json`（当传入 `--code-dir` 时）
 
 ## 默认模板行为
 

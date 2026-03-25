@@ -42,6 +42,7 @@ class PriorArtScanStage:
         topic = str(ctx.metadata.get("topic", "") or "")
         resources = default_resources()
         queries = build_queries(topic, candidates)
+        queries = _extend_queries_from_seed_artifacts(ctx=ctx, queries=queries)
         raw_hits = _generate_raw_hits(topic=topic, resources=resources, queries=queries, candidates=candidates)
         deduped_hits = deduplicate_hits(raw_hits)
         evidence = summarize_hits(deduped_hits)
@@ -110,6 +111,77 @@ def _write_queries(*, work_dir: Path, queries: List[str]) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(queries, ensure_ascii=False, indent=2), encoding="utf-8")
     return path
+
+
+def _extend_queries_from_seed_artifacts(*, ctx: StageContext, queries: List[str]) -> List[str]:
+    seeds: List[str] = []
+
+    digest = _read_seed_file(ctx.metadata.get("input_doc_digest_path"), base_dir=ctx.work_dir)
+    if digest:
+        tokens = digest.replace("\n", " ").split()
+        for token in tokens:
+            cleaned = token.strip(",:;()[]{}<>\"'")
+            if len(cleaned) <= 2:
+                continue
+            seeds.append(cleaned)
+            if len(seeds) >= 12:
+                break
+
+    inventory_payload = _read_seed_json(ctx.metadata.get("code_inventory_path"), base_dir=ctx.work_dir)
+    if isinstance(inventory_payload, dict):
+        files = inventory_payload.get("files")
+        if isinstance(files, list):
+            for item in files:
+                if not isinstance(item, dict):
+                    continue
+                rel = str(item.get("path", "")).strip()
+                if not rel:
+                    continue
+                stem = Path(rel).stem
+                if len(stem) <= 2:
+                    continue
+                seeds.append(stem)
+                if len(seeds) >= 24:
+                    break
+
+    merged = list(queries)
+    seen = {q.lower() for q in merged}
+    base_topic = str(ctx.metadata.get("topic", "") or "").strip() or "未命名主题"
+    for seed in seeds:
+        q = f"{base_topic} {seed}"
+        key = q.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(q)
+        if len(merged) >= 20:
+            break
+    return merged
+
+
+def _read_seed_file(raw_path: Any, *, base_dir: Path) -> str:
+    if raw_path is None:
+        return ""
+    path = Path(str(raw_path).strip())
+    if not path:
+        return ""
+    if not path.is_absolute():
+        path = (base_dir / path).resolve()
+    else:
+        path = path.resolve()
+    if not path.exists() or not path.is_file():
+        return ""
+    return path.read_text(encoding="utf-8", errors="ignore")
+
+
+def _read_seed_json(raw_path: Any, *, base_dir: Path) -> Any:
+    content = _read_seed_file(raw_path, base_dir=base_dir)
+    if not content:
+        return None
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        return None
 
 
 def _write_prior_art_evidence(
