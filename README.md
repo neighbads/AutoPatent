@@ -38,6 +38,8 @@ python -m autopatent.cli run --input-doc ./seed.md --code-dir ./impl --auto-appr
 python -m autopatent.cli run --topic "示例主题" --output ./artifacts/demo --resume --auto-approve
 ```
 
+`--resume` 会优先读取阶段 metadata 快照；若快照缺失，会回退到 `metadata_latest.json`，并尝试从 `human_decisions.json` 恢复 Stage 04 选择。
+
 ## 输出目录说明
 
 以 `--output ./artifacts/demo` 为例，当前会产出：

@@ -68,8 +68,9 @@ def run(
             checkpoints=checkpoints,
         )
         if resumed_metadata is not None:
-            metadata = resumed_metadata
-            _apply_run_mode(metadata, auto_approve=auto_approve)
+            metadata.update(resumed_metadata)
+        _restore_human_decisions(metadata=metadata, state_dir=state_dir)
+        _apply_run_mode(metadata, auto_approve=auto_approve)
         if start_idx >= len(stages):
             typer.echo("Checkpoint indicates all stages are already complete. Nothing to resume.")
             return
@@ -145,6 +146,8 @@ def _resume_state(
     if idx is None:
         raise ValueError(f"Unknown checkpoint stage_id: {latest.stage_id}")
     metadata = _read_metadata_snapshot(state_dir=state_dir, stage_id=latest.stage_id)
+    if metadata is None:
+        metadata = _read_metadata_latest(state_dir=state_dir)
     if latest.status == "done":
         return idx + 1, metadata
     return idx, metadata
@@ -161,16 +164,27 @@ def _snapshot_path(*, state_dir: Path, stage_id: str) -> Path:
     return state_dir / "metadata" / f"{stage_id}.json"
 
 
-def _read_metadata_snapshot(*, state_dir: Path, stage_id: str) -> dict[str, Any]:
+def _read_metadata_snapshot(*, state_dir: Path, stage_id: str) -> Optional[dict[str, Any]]:
     path = _snapshot_path(state_dir=state_dir, stage_id=stage_id)
     if not path.exists():
-        raise ValueError(f"Missing metadata snapshot for resume: {path}")
+        return None
+    return _read_json_object(path, label="metadata snapshot")
+
+
+def _read_metadata_latest(*, state_dir: Path) -> Optional[dict[str, Any]]:
+    path = state_dir / "metadata_latest.json"
+    if not path.exists():
+        return None
+    return _read_json_object(path, label="metadata latest snapshot")
+
+
+def _read_json_object(path: Path, *, label: str) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
-        raise ValueError(f"Malformed metadata snapshot at {path}: {exc}") from exc
+        raise ValueError(f"Malformed {label} at {path}: {exc}") from exc
     if not isinstance(payload, dict):
-        raise ValueError(f"Metadata snapshot at {path} must be a JSON object")
+        raise ValueError(f"{label} at {path} must be a JSON object")
     return payload
 
 
@@ -208,6 +222,22 @@ def _write_human_decisions(*, state_dir: Path, stage_id: str, metadata: dict[str
         payload = {}
     payload["STAGE_04"] = record
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _restore_human_decisions(*, metadata: dict[str, Any], state_dir: Path) -> None:
+    path = state_dir / "human_decisions.json"
+    if not path.exists():
+        return
+    payload = _read_json_object(path, label="human decisions")
+    stage04 = payload.get("STAGE_04")
+    if not isinstance(stage04, dict):
+        return
+    selected = stage04.get("selected_direction_id")
+    if selected is not None and not str(metadata.get("selected_direction_id", "")).strip():
+        metadata["selected_direction_id"] = str(selected)
+    decision_path = stage04.get("decision_path")
+    if decision_path and not metadata.get("direction_gate_decision_path"):
+        metadata["direction_gate_decision_path"] = decision_path
 
 
 def _to_jsonable(payload: dict[str, Any]) -> dict[str, Any]:

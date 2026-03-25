@@ -89,3 +89,38 @@ def test_resume_continues_from_latest_done_stage(tmp_path):
     assert resumed_history[-1]["stage_id"] == "STAGE_15"
     assert resumed_history[-1]["status"] == "done"
     assert len(resumed_history) == 16
+
+
+def test_resume_recovers_human_decision_when_stage_metadata_missing(tmp_path):
+    runner = CliRunner()
+    output_dir = tmp_path / "resume-human-out"
+
+    first = runner.invoke(
+        app,
+        ["run", "--topic", "后量子 IPsec", "--output", str(output_dir)],
+        input="choose 2\n",
+    )
+    assert first.exit_code == 0
+
+    history = _read_checkpoint_history(output_dir)
+    # Keep only up to STAGE_04 done.
+    history_file = output_dir / "state" / "checkpoint_history.json"
+    history_file.write_text(json.dumps(history[:5], ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # Simulate partial state corruption: stage snapshot and latest snapshot missing.
+    stage04_snapshot = output_dir / "state" / "metadata" / "STAGE_04.json"
+    if stage04_snapshot.exists():
+        stage04_snapshot.unlink()
+    latest_snapshot = output_dir / "state" / "metadata_latest.json"
+    if latest_snapshot.exists():
+        latest_snapshot.unlink()
+
+    resumed = runner.invoke(
+        app,
+        ["run", "--topic", "后量子 IPsec", "--output", str(output_dir), "--resume"],
+    )
+    assert resumed.exit_code == 0
+
+    resumed_history = _read_checkpoint_history(output_dir)
+    assert resumed_history[-1]["stage_id"] == "STAGE_15"
+    assert resumed_history[-1]["status"] == "done"
