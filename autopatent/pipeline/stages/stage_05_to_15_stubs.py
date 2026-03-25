@@ -268,6 +268,7 @@ class _RenderDisclosureStage:
     produces: list[str] = field(
         default_factory=lambda: [
             "disclosure_draft_path",
+            "disclosure_docx_path",
             "disclosure_docx_markdown_path",
             "template_used",
         ]
@@ -281,11 +282,15 @@ class _RenderDisclosureStage:
         rendered = render_disclosure(context=disclosure_context, template_name=template_name)
 
         markdown_path = ctx.work_dir / "artifacts" / "disclosure.md"
+        docx_path = ctx.work_dir / "artifacts" / "disclosure.docx"
         docx_markdown_path = ctx.work_dir / "artifacts" / "disclosure.docx.md"
         _atomic_write_text(markdown_path, rendered.markdown)
+        # Stub docx payload: keep extension for downstream packaging compatibility.
+        _atomic_write_text(docx_path, rendered.docx_markdown)
         _atomic_write_text(docx_markdown_path, rendered.docx_markdown)
 
         ctx.metadata["disclosure_draft_path"] = str(markdown_path)
+        ctx.metadata["disclosure_docx_path"] = str(docx_path)
         ctx.metadata["disclosure_docx_markdown_path"] = str(docx_markdown_path)
         ctx.metadata["template_used"] = rendered.template_name
 
@@ -293,6 +298,7 @@ class _RenderDisclosureStage:
             produces=list(self.produces),
             outputs={
                 "disclosure_draft_path": str(markdown_path),
+                "disclosure_docx_path": str(docx_path),
                 "disclosure_docx_markdown_path": str(docx_markdown_path),
                 "template_used": rendered.template_name,
             },
@@ -303,11 +309,16 @@ class _RenderDisclosureStage:
 class DeliverablesExportStage:
     stage_id: str = "STAGE_15"
     requires: list[str] = field(
-        default_factory=lambda: ["disclosure_draft_path", "oa_response_playbook_draft_path"]
+        default_factory=lambda: [
+            "disclosure_draft_path",
+            "disclosure_docx_path",
+            "oa_response_playbook_draft_path",
+        ]
     )
     produces: list[str] = field(
         default_factory=lambda: [
             "deliverables_disclosure_path",
+            "deliverables_disclosure_docx_path",
             "deliverables_oa_response_playbook_path",
             "deliverables_disclosure_validation_report_path",
             "final_package_dir",
@@ -316,9 +327,11 @@ class DeliverablesExportStage:
 
     def run(self, ctx: StageContext) -> StageResult:
         disclosure_src = _safe_artifact_source(ctx, "disclosure_draft_path")
+        disclosure_docx_src = _safe_artifact_source(ctx, "disclosure_docx_path")
         playbook_src = _safe_artifact_source(ctx, "oa_response_playbook_draft_path")
 
         disclosure_content = _read_text_if_exists(disclosure_src) or ""
+        disclosure_docx_content = _read_text_if_exists(disclosure_docx_src) or disclosure_content
         playbook_content = _read_text_if_exists(playbook_src) or _render_oa_response_playbook_draft(ctx)
         validation_content = _read_text_if_exists(
             _safe_artifact_source(ctx, "disclosure_validation_report_path")
@@ -337,6 +350,7 @@ class DeliverablesExportStage:
         final_package_dir = ctx.work_dir / "final_package"
 
         disclosure_out = out_dir / "disclosure.md"
+        disclosure_docx_out = out_dir / "disclosure.docx"
         playbook_out = out_dir / "oa_response_playbook.md"
         validation_out = out_dir / "disclosure_validation_report.md"
         claims_out = out_dir / "claims_draft.md"
@@ -344,6 +358,7 @@ class DeliverablesExportStage:
         novelty_out = out_dir / "novelty_risk_report.md"
 
         _atomic_write_text(disclosure_out, disclosure_content)
+        _atomic_write_text(disclosure_docx_out, disclosure_docx_content)
         _atomic_write_text(playbook_out, playbook_content)
         _atomic_write_text(validation_out, validation_content)
         _atomic_write_text(claims_out, claims_content)
@@ -351,6 +366,7 @@ class DeliverablesExportStage:
         _atomic_write_text(novelty_out, novelty_content)
 
         _atomic_write_text(final_package_dir / "disclosure.md", disclosure_content)
+        _atomic_write_text(final_package_dir / "disclosure.docx", disclosure_docx_content)
         _atomic_write_text(final_package_dir / "oa_response_playbook.md", playbook_content)
         _atomic_write_text(final_package_dir / "disclosure_validation_report.md", validation_content)
         _atomic_write_text(final_package_dir / "claims_draft.md", claims_content)
@@ -358,6 +374,7 @@ class DeliverablesExportStage:
         _atomic_write_text(final_package_dir / "novelty_risk_report.md", novelty_content)
 
         ctx.metadata["deliverables_disclosure_path"] = str(disclosure_out)
+        ctx.metadata["deliverables_disclosure_docx_path"] = str(disclosure_docx_out)
         ctx.metadata["deliverables_oa_response_playbook_path"] = str(playbook_out)
         ctx.metadata["deliverables_disclosure_validation_report_path"] = str(validation_out)
         ctx.metadata["final_package_dir"] = str(final_package_dir)
@@ -366,6 +383,7 @@ class DeliverablesExportStage:
             produces=list(self.produces),
             outputs={
                 "deliverables_disclosure_path": str(disclosure_out),
+                "deliverables_disclosure_docx_path": str(disclosure_docx_out),
                 "deliverables_oa_response_playbook_path": str(playbook_out),
                 "deliverables_disclosure_validation_report_path": str(validation_out),
                 "final_package_dir": str(final_package_dir),

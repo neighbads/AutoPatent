@@ -8,28 +8,40 @@ from autopatent.pipeline import StageContext, StageResult
 
 
 def _default_candidates(topic: str) -> List[Dict[str, Any]]:
-    # Deterministic stub candidates.
+    # Deterministic yet dynamic candidate set around 5 items.
     base = topic.strip() or "通用"
-    return [
-        {
-            "id": "1",
-            "title": f"{base} 方向 1",
-            "summary": f"{base} 的可专利化方向探索 (stub)",
-            "score": 0.35,
-        },
-        {
-            "id": "2",
-            "title": f"{base} 方向 2",
-            "summary": f"{base} 的差异化实现路径 (stub)",
-            "score": 0.55,
-        },
-        {
-            "id": "3",
-            "title": f"{base} 方向 3",
-            "summary": f"{base} 的工程落地与系统方案 (stub)",
-            "score": 0.45,
-        },
+    count = _candidate_count(base)
+    templates = [
+        ("可专利化方向探索", 0.35),
+        ("差异化实现路径", 0.55),
+        ("工程落地与系统方案", 0.45),
+        ("协议协商与状态机优化", 0.50),
+        ("密钥管理与接口抽象", 0.52),
+        ("部署与运维自动化", 0.48),
     ]
+    candidates: List[Dict[str, Any]] = []
+    for i in range(1, count + 1):
+        idx = i - 1
+        label, score = templates[idx % len(templates)]
+        candidates.append(
+            {
+                "id": str(i),
+                "title": f"{base} 方向 {i}",
+                "summary": f"{base} 的{label} (stub)",
+                "score": score,
+            }
+        )
+    return candidates
+
+
+def _candidate_count(base_topic: str) -> int:
+    # Produce 4-6 candidates, targeting ~5.
+    clean_len = len(base_topic.replace(" ", ""))
+    if clean_len <= 6:
+        return 4
+    if clean_len >= 20:
+        return 6
+    return 5
 
 
 @dataclass

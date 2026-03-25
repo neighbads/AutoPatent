@@ -42,17 +42,18 @@ python -m autopatent.cli run --topic "示例主题" --output ./artifacts/demo --
 以 `--output ./artifacts/demo` 为例，当前会产出：
 
 1. `./artifacts/demo/deliverables/disclosure.md`
-2. `./artifacts/demo/deliverables/oa_response_playbook.md`
-3. `./artifacts/demo/state/checkpoint_history.json`
-4. `./artifacts/demo/state/metadata_latest.json`
-5. `./artifacts/demo/state/metadata/STAGE_XX.json`（各阶段快照）
-6. `./artifacts/demo/state/human_decisions.json`（人工关卡决策记录）
-7. `./artifacts/demo/artifacts/direction_analysis_report.md`
-8. `./artifacts/demo/artifacts/prior_art_evidence.jsonl`
-9. `./artifacts/demo/artifacts/direction_scores.json`
-10. `./artifacts/demo/artifacts/disclosure_context.json`
-11. `./artifacts/demo/deliverables/disclosure_validation_report.md`
-12. `./artifacts/demo/final_package/`
+2. `./artifacts/demo/deliverables/disclosure.docx`（当前为 stub 文本载荷）
+3. `./artifacts/demo/deliverables/oa_response_playbook.md`
+4. `./artifacts/demo/state/checkpoint_history.json`
+5. `./artifacts/demo/state/metadata_latest.json`
+6. `./artifacts/demo/state/metadata/STAGE_XX.json`（各阶段快照）
+7. `./artifacts/demo/state/human_decisions.json`（人工关卡决策记录）
+8. `./artifacts/demo/artifacts/direction_analysis_report.md`
+9. `./artifacts/demo/artifacts/prior_art_evidence.jsonl`
+10. `./artifacts/demo/artifacts/direction_scores.json`
+11. `./artifacts/demo/artifacts/disclosure_context.json`
+12. `./artifacts/demo/deliverables/disclosure_validation_report.md`
+13. `./artifacts/demo/final_package/`
 
 ## 默认模板行为
 

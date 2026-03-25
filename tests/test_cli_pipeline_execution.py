@@ -29,13 +29,16 @@ def test_run_generates_deliverables_and_checkpoints(tmp_path):
 
     assert result.exit_code == 0
     assert (output_dir / "deliverables" / "disclosure.md").exists()
+    assert (output_dir / "deliverables" / "disclosure.docx").exists()
     assert (output_dir / "deliverables" / "oa_response_playbook.md").exists()
     assert (output_dir / "deliverables" / "disclosure_validation_report.md").exists()
     assert (output_dir / "final_package").exists()
+    assert (output_dir / "final_package" / "disclosure.docx").exists()
     assert (output_dir / "artifacts" / "direction_analysis_report.md").exists()
     assert (output_dir / "artifacts" / "prior_art_evidence.jsonl").exists()
     assert (output_dir / "artifacts" / "direction_scores.json").exists()
     assert (output_dir / "artifacts" / "disclosure_context.json").exists()
+    assert (output_dir / "artifacts" / "disclosure.docx").exists()
 
     history = _read_checkpoint_history(output_dir)
     assert history[0]["stage_id"] == "STAGE_00"
