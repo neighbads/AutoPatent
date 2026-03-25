@@ -7,7 +7,9 @@ Goal:
 - Export a minimal deliverable package under `<work_dir>/deliverables/` and
   `<work_dir>/final_package/`.
 
-Everything here is deterministic (no network, no LLM).
+By default this module is deterministic. If `ctx.metadata["llm"]` is provided,
+selected stages will attempt LLM-assisted drafting and fall back to stub text
+on failure.
 """
 
 import json
@@ -16,6 +18,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 from uuid import uuid4
 
+from autopatent.llm import OpenAICompatibleClient
 from autopatent.pipeline import Stage, StageContext, StageResult
 from autopatent.templates.renderer import DEFAULT_TEMPLATE_NAME, render_disclosure
 
@@ -85,6 +88,23 @@ def _selected_direction_id(ctx: StageContext) -> str:
     raw = ctx.metadata.get("selected_direction_id")
     sid = str(raw or "").strip()
     return sid or "N/A"
+
+
+def _try_llm_text(*, ctx: StageContext, task: str, prompt: str, fallback: str) -> str:
+    runtime = ctx.metadata.get("llm")
+    if not isinstance(runtime, dict):
+        return fallback
+    try:
+        client = OpenAICompatibleClient.from_runtime_mapping(runtime)
+        text = client.chat(
+            system_prompt="你是中国发明专利写作助手。输出中文专业文本，结构清晰，避免空话。",
+            user_prompt=prompt,
+            max_tokens=int(runtime.get("max_tokens", 4096)),
+        )
+    except Exception:
+        return fallback
+    content = str(text or "").strip()
+    return content or fallback
 
 
 def _build_disclosure_context(ctx: StageContext) -> Dict[str, Any]:
@@ -165,16 +185,23 @@ def _render_claim_strategy(ctx: StageContext) -> str:
 
 
 def _render_claims_draft(ctx: StageContext) -> str:
-    return (
+    fallback = (
         "# 权利要求书草案 (MVP stub)\n\n"
         "1. 一种系统，其特征在于包括协商模块、密钥模块与策略模块。\n"
         "2. 根据权利要求1所述系统，其中协商模块支持多策略切换。\n"
         "3. 根据权利要求1所述系统，其中密钥模块支持分层派生。\n"
     )
+    prompt = (
+        f"主题：{_topic(ctx)}\n"
+        f"方向ID：{_selected_direction_id(ctx)}\n"
+        "请输出权利要求书草案，至少3条，包含1条独立权利要求与2条从属权利要求。"
+    )
+    generated = _try_llm_text(ctx=ctx, task="claims_draft", prompt=prompt, fallback=fallback)
+    return generated
 
 
 def _render_spec_draft(ctx: StageContext) -> str:
-    return (
+    fallback = (
         "# 说明书草案 (MVP stub)\n\n"
         "## 背景技术\n"
         "现有方案在兼容性与可验证性方面存在不足。\n\n"
@@ -183,6 +210,12 @@ def _render_spec_draft(ctx: StageContext) -> str:
         "## 具体实施方式\n"
         "描述控制面与数据面协同的实施流程。\n"
     )
+    prompt = (
+        f"主题：{_topic(ctx)}\n"
+        "请输出说明书草案，包含背景技术、发明内容、附图说明、具体实施方式四节。"
+    )
+    generated = _try_llm_text(ctx=ctx, task="spec_draft", prompt=prompt, fallback=fallback)
+    return generated
 
 
 def _render_patent_legal_validate(ctx: StageContext) -> str:
@@ -206,7 +239,7 @@ def _render_novelty_risk_report(ctx: StageContext) -> str:
 def _render_oa_response_playbook_draft(ctx: StageContext) -> str:
     t = _topic(ctx)
     sid = _selected_direction_id(ctx)
-    return (
+    fallback = (
         "# OA 答复剧本 (MVP stub)\n\n"
         f"- 主题: {t}\n"
         f"- 选定方向ID: {sid}\n\n"
@@ -217,6 +250,12 @@ def _render_oa_response_playbook_draft(ctx: StageContext) -> str:
         "2. 选择答复策略\n"
         "3. 准备对比表与修改说明\n"
     )
+    prompt = (
+        f"主题：{t}\n方向ID：{sid}\n"
+        "请输出中文审查意见答复剧本，包含意见分类、答复策略、证据映射、修改建议。"
+    )
+    generated = _try_llm_text(ctx=ctx, task="oa_response_playbook", prompt=prompt, fallback=fallback)
+    return generated
 
 
 @dataclass
@@ -308,14 +347,24 @@ class _RenderDisclosureStage:
 
         template_name = str(ctx.metadata.get("template") or DEFAULT_TEMPLATE_NAME)
         rendered = render_disclosure(context=disclosure_context, template_name=template_name)
+        llm_prompt = (
+            f"主题：{_topic(ctx)}\n"
+            "请基于给定技术背景补充一段技术交底书扩展内容，突出技术效果与实施要点。"
+        )
+        llm_extra = _try_llm_text(ctx=ctx, task="disclosure_draft", prompt=llm_prompt, fallback="")
+        markdown_body = rendered.markdown
+        docx_markdown_body = rendered.docx_markdown
+        if llm_extra.strip():
+            markdown_body = f"{markdown_body}\n\n## LLM 扩展草案\n{llm_extra.strip()}\n"
+            docx_markdown_body = f"{docx_markdown_body}\n\n## LLM 扩展草案\n{llm_extra.strip()}\n"
 
         markdown_path = ctx.work_dir / "artifacts" / "disclosure.md"
         docx_path = ctx.work_dir / "artifacts" / "disclosure.docx"
         docx_markdown_path = ctx.work_dir / "artifacts" / "disclosure.docx.md"
-        _atomic_write_text(markdown_path, rendered.markdown)
+        _atomic_write_text(markdown_path, markdown_body)
         # Stub docx payload: keep extension for downstream packaging compatibility.
-        _atomic_write_text(docx_path, rendered.docx_markdown)
-        _atomic_write_text(docx_markdown_path, rendered.docx_markdown)
+        _atomic_write_text(docx_path, docx_markdown_body)
+        _atomic_write_text(docx_markdown_path, docx_markdown_body)
 
         ctx.metadata["disclosure_draft_path"] = str(markdown_path)
         ctx.metadata["disclosure_docx_path"] = str(docx_path)

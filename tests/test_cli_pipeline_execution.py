@@ -125,3 +125,35 @@ def test_resume_recovers_human_decision_when_stage_metadata_missing(tmp_path):
     resumed_history = _read_checkpoint_history(output_dir)
     assert resumed_history[-1]["stage_id"] == "STAGE_15"
     assert resumed_history[-1]["status"] == "done"
+
+
+def test_run_uses_configured_search_provider(tmp_path):
+    runner = CliRunner()
+    output_dir = tmp_path / "run-with-config"
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "search_provider": "seed-only",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "--topic",
+            "抗量子SSL和证书",
+            "--output",
+            str(output_dir),
+            "--auto-approve",
+            "--config",
+            str(config_path),
+        ],
+    )
+    assert result.exit_code == 0
+
+    meta = json.loads((output_dir / "artifacts" / "search_meta.json").read_text(encoding="utf-8"))
+    assert meta["provider"] == "seed-only"

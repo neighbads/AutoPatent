@@ -4,6 +4,7 @@ from typing import Any, Optional, Sequence
 
 import typer
 
+from autopatent.config import load_config
 from autopatent.pipeline import PipelineEngine, Stage, StageContext
 from autopatent.pipeline.checkpoint import CheckpointStore
 from autopatent.pipeline.stages import (
@@ -32,6 +33,7 @@ def run(
     input_doc: Optional[Path] = None,
     output: Optional[Path] = None,
     code_dir: Optional[Path] = None,
+    config: Optional[Path] = None,
     resume: bool = False,
     auto_approve: bool = typer.Option(False, "--auto-approve"),
     template: Optional[str] = None,
@@ -44,6 +46,10 @@ def run(
         raise typer.BadParameter(f"输入文档不存在: {input_doc}", param_hint="--input-doc")
     if code_dir and not code_dir.exists():
         raise typer.BadParameter(f"代码目录不存在: {code_dir}", param_hint="--code-dir")
+    if config and not config.exists():
+        raise typer.BadParameter(f"配置文件不存在: {config}", param_hint="--config")
+
+    app_cfg = load_config(config_path=config)
 
     selected_template = template or DEFAULT_TEMPLATE_NAME
     output_dir = (output or (Path.cwd() / "artifacts" / "autopatent-run")).expanduser().resolve()
@@ -58,6 +64,8 @@ def run(
         input_doc=input_doc,
         code_dir=code_dir,
         template_name=selected_template,
+        search_provider=app_cfg.search_provider,
+        llm_runtime=app_cfg.llm.to_runtime_mapping() if app_cfg.llm else None,
         auto_approve=auto_approve,
     )
     start_idx = 0
@@ -111,6 +119,8 @@ def _initial_metadata(
     input_doc: Optional[Path],
     code_dir: Optional[Path],
     template_name: str,
+    search_provider: str,
+    llm_runtime: Optional[dict[str, Any]],
     auto_approve: bool,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
@@ -118,6 +128,8 @@ def _initial_metadata(
         "input_doc": str(input_doc.expanduser().resolve()) if input_doc else None,
         "code_dir": str(code_dir.expanduser().resolve()) if code_dir else None,
         "template": template_name,
+        "search_provider": search_provider,
+        "llm": llm_runtime,
     }
     _apply_run_mode(payload, auto_approve=auto_approve)
     return _to_jsonable(payload)

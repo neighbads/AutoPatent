@@ -65,3 +65,30 @@ def test_load_config_rejects_checkpoint_root_type(tmp_path):
     with pytest.raises(ValueError) as exc:
         load_config(config_path=config_path)
     assert "checkpoint_root" in str(exc.value)
+
+
+def test_load_config_parses_llm_and_search_provider(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "checkpoint_root": str(tmp_path / "state"),
+                "search_provider": "seed-only",
+                "llm": {
+                    "provider": "openai-compatible",
+                    "base_url": "http://127.0.0.1:8000/v1",
+                    "api_key_env": "OPENAI_API_KEY",
+                    "model": "gpt-5.4",
+                    "timeout_sec": 20,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    cfg = load_config(config_path=config_path)
+    assert cfg.search_provider == "seed-only"
+    assert cfg.llm is not None
+    assert cfg.llm.provider == "openai-compatible"
+    assert cfg.llm.base_url == "http://127.0.0.1:8000/v1"
+    assert cfg.llm.api_key_env == "OPENAI_API_KEY"
+    assert cfg.llm.model == "gpt-5.4"
