@@ -174,10 +174,28 @@ def _sanitize_llm_output(*, task: str, text: str) -> str:
     return "\n".join(filtered).strip()
 
 
+def _list_to_text(items: Any, prefix: str = "- ") -> str:
+    if not isinstance(items, list):
+        return ""
+    rows = [f"{prefix}{str(item)}" for item in items if str(item).strip()]
+    return "\n".join(rows)
+
+
 def _build_disclosure_context(ctx: StageContext) -> Dict[str, Any]:
     t = _topic(ctx)
     sid = _selected_direction_id(ctx)
     code_dir = str(ctx.metadata.get("code_dir") or "").strip()
+    claim_seed_points = [
+        "混合协商状态机",
+        "分层密钥派生接口",
+        "策略驱动的数据面转换机制",
+    ]
+    evidence_refs = [
+        "artifacts/prior_art_evidence.jsonl",
+        "artifacts/direction_scores.json",
+        "artifacts/direction_analysis_report.md",
+    ]
+    code_evidence = [code_dir] if code_dir else []
     return {
         # Template placeholders used by cn_invention_default.*.j2
         "title": f"{t} 的系统与方法",
@@ -194,17 +212,12 @@ def _build_disclosure_context(ctx: StageContext) -> Dict[str, Any]:
         "technical_effects": "提升握手鲁棒性、降低迁移风险并形成清晰证据链。",
         "embodiments_detail": "提供控制面与数据面的联合实施路径。",
         "optional_figures_desc": ["系统模块图", "协商时序图", "数据处理流程图"],
-        "claim_seed_points": [
-            "混合协商状态机",
-            "分层密钥派生接口",
-            "策略驱动的数据面转换机制",
-        ],
-        "evidence_refs": [
-            "artifacts/prior_art_evidence.jsonl",
-            "artifacts/direction_scores.json",
-            "artifacts/direction_analysis_report.md",
-        ],
-        "code_evidence": [code_dir] if code_dir else [],
+        "claim_seed_points": claim_seed_points,
+        "evidence_refs": evidence_refs,
+        "code_evidence": code_evidence,
+        "evidence_refs_text": _list_to_text(evidence_refs),
+        "claim_seed_points_text": _list_to_text(claim_seed_points),
+        "code_evidence_text": _list_to_text(code_evidence),
     }
 
 
