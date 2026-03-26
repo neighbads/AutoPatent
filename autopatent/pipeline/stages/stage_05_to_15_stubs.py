@@ -181,6 +181,20 @@ def _list_to_text(items: Any, prefix: str = "- ") -> str:
     return "\n".join(rows)
 
 
+def _normalize_disclosure_context_for_render(context: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = dict(context)
+    for text_key, list_key in (
+        ("evidence_refs_text", "evidence_refs"),
+        ("claim_seed_points_text", "claim_seed_points"),
+        ("code_evidence_text", "code_evidence"),
+    ):
+        existing = normalized.get(text_key)
+        if isinstance(existing, str) and existing.strip():
+            continue
+        normalized[text_key] = _list_to_text(normalized.get(list_key))
+    return normalized
+
+
 def _build_disclosure_context(ctx: StageContext) -> Dict[str, Any]:
     t = _topic(ctx)
     sid = _selected_direction_id(ctx)
@@ -745,6 +759,7 @@ class _RenderDisclosureStage:
     def run(self, ctx: StageContext) -> StageResult:
         context_path = _safe_artifact_source(ctx, "disclosure_context_path")
         disclosure_context = _read_json_if_exists(context_path) or _build_disclosure_context(ctx)
+        disclosure_context = _normalize_disclosure_context_for_render(disclosure_context)
 
         template_name = str(ctx.metadata.get("template") or DEFAULT_TEMPLATE_NAME)
         rendered = render_disclosure(context=disclosure_context, template_name=template_name)

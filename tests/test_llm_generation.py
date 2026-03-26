@@ -105,6 +105,49 @@ def test_stage07_sanitizes_llm_scaffold_text(tmp_path, monkeypatch):
     assert "技术扩展内容" in content
 
 
+def test_stage07_backfills_legacy_sansec_text_fields_from_lists(tmp_path):
+    context_path = tmp_path / "artifacts" / "disclosure_context.json"
+    context_path.parent.mkdir(parents=True, exist_ok=True)
+    context_path.write_text(
+        (
+            '{'
+            '"title":"抗量子SSL和证书",'
+            '"technical_field":"field",'
+            '"background":"bg",'
+            '"summary":"sum",'
+            '"embodiments":"emb",'
+            '"embodiments_detail":"detail",'
+            '"invention_title":"发明标题",'
+            '"technical_field_cn":"技术领域",'
+            '"background_art":"背景技术",'
+            '"core_solution":"技术方案",'
+            '"technical_effects":"有益效果",'
+            '"evidence_refs":["e1","e2"],'
+            '"claim_seed_points":["c1","c2"],'
+            '"code_evidence":["src/a.c"]'
+            '}'
+        ),
+        encoding="utf-8",
+    )
+
+    ctx = StageContext(
+        work_dir=tmp_path,
+        metadata={
+            "topic": "抗量子SSL和证书",
+            "selected_direction_id": "2",
+            "template": "sansec_disclosure_v1",
+            "disclosure_context_path": str(context_path),
+        },
+    )
+
+    _find_stage("STAGE_07").run(ctx)
+    content = (tmp_path / "artifacts" / "disclosure.md").read_text(encoding="utf-8")
+    assert "附录A 检索报告要点" in content
+    assert "- e1" in content
+    assert "- c1" in content
+    assert "- src/a.c" in content
+
+
 def test_stage11_sanitizes_leading_llm_preamble(tmp_path, monkeypatch):
     monkeypatch.setattr(
         stage_stubs,
