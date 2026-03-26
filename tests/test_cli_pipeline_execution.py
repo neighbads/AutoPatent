@@ -96,6 +96,29 @@ def test_run_generates_deliverables_and_checkpoints(tmp_path):
     assert payload["STAGE_04"]["selected_direction_id"] == "2"
 
 
+def test_run_uses_sansec_disclosure_template(tmp_path):
+    runner = CliRunner()
+    output_dir = tmp_path / "run-sansec-template"
+
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "--topic",
+            "抗量子SSL和证书",
+            "--output",
+            str(output_dir),
+            "--auto-approve",
+            "--template",
+            "sansec_disclosure_v1",
+        ],
+    )
+
+    assert result.exit_code == 0
+    disclosure = (output_dir / "artifacts" / "disclosure.md").read_text(encoding="utf-8")
+    assert "附录A 检索报告要点" in disclosure
+
+
 def test_resume_continues_from_latest_done_stage(tmp_path):
     runner = CliRunner()
     output_dir = tmp_path / "resume-out"
