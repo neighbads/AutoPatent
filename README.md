@@ -177,10 +177,12 @@ mmdc -p /tmp/puppeteer-config.json -i /tmp/quick.mmd -o /tmp/quick.png
 可通过 `--template sansec_disclosure_v1` 启用 Sansec 交底书模板：
 
 ```bash
+OUT_DIR="$(mktemp -d /tmp/autopatent-sansec-smoke.XXXXXX)"
+
 python -m autopatent.cli run \
   --topic "抗量子SSL和证书" \
   --template sansec_disclosure_v1 \
-  --output /tmp/autopatent-sansec-smoke \
+  --output "$OUT_DIR" \
   --auto-approve
 ```
 
@@ -193,5 +195,6 @@ python -m autopatent.cli run \
 - 在交底书中追加“附录A 检索报告要点”（检索报告附录A）。
 
 验收建议（smoke）：
-- 运行上述命令后，检查 `/tmp/autopatent-sansec-smoke/artifacts/disclosure.md` 文件存在。
-- 文件内容应包含标题文本“附录A 检索报告要点”。
+- 命令返回码应为 `0`（exit code = 0）。
+- 检查 `"$OUT_DIR"/artifacts/disclosure.md` 文件存在，且包含标题文本“附录A 检索报告要点”。
+- 检查 `"$OUT_DIR"/deliverables/disclosure.md` 文件存在，且包含标题文本“附录A 检索报告要点”。
