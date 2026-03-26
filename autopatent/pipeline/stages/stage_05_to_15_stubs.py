@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-"""Stage 05-15 deterministic stubs (CN MVP).
+"""Stage 05-15 deterministic synthesis pipeline (CN MVP+).
 
 Goal:
 - Provide a stable artifact chain under `<work_dir>/artifacts/`.
-- Export a minimal deliverable package under `<work_dir>/deliverables/` and
+- Export a structured deliverable package under `<work_dir>/deliverables/` and
   `<work_dir>/final_package/`.
 
 By default this module is deterministic. If `ctx.metadata["llm"]` is provided,
-selected stages will attempt LLM-assisted drafting and fall back to stub text
+selected stages will attempt LLM-assisted drafting and fall back to
+deterministic structured text
 on failure.
 """
 
@@ -93,6 +94,90 @@ def _selected_direction_id(ctx: StageContext) -> str:
     raw = ctx.metadata.get("selected_direction_id")
     sid = str(raw or "").strip()
     return sid or "N/A"
+
+
+def _direction_candidates(ctx: StageContext) -> List[Dict[str, Any]]:
+    raw = ctx.metadata.get("direction_candidates")
+    if not isinstance(raw, list):
+        return []
+    result: List[Dict[str, Any]] = []
+    for item in raw:
+        if isinstance(item, dict):
+            result.append(item)
+    return result
+
+
+def _selected_direction(ctx: StageContext) -> Dict[str, Any]:
+    sid = _selected_direction_id(ctx)
+    for item in _direction_candidates(ctx):
+        if str(item.get("id", "")).strip() == sid:
+            return item
+    return {}
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _read_jsonl_if_exists(path: Optional[Path]) -> List[Dict[str, Any]]:
+    if path is None or not path.exists() or not path.is_file():
+        return []
+    rows: List[Dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        text = line.strip()
+        if not text:
+            continue
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            rows.append(payload)
+    return rows
+
+
+def _load_prior_art_evidence(ctx: StageContext) -> List[Dict[str, Any]]:
+    path = _safe_artifact_source(ctx, "prior_art_evidence_path")
+    if path is None:
+        path = ctx.work_dir / "artifacts" / "prior_art_evidence.jsonl"
+    return _read_jsonl_if_exists(path)
+
+
+def _load_direction_scores(ctx: StageContext) -> Dict[str, Any]:
+    path = _safe_artifact_source(ctx, "direction_scores_path")
+    if path is None:
+        path = ctx.work_dir / "artifacts" / "direction_scores.json"
+    payload = _read_json_if_exists(path)
+    return payload if isinstance(payload, dict) else {}
+
+
+def _top_evidence_titles(ctx: StageContext, limit: int = 5) -> List[str]:
+    evidence = _load_prior_art_evidence(ctx)
+    titles: List[str] = []
+    for item in evidence:
+        title = str(item.get("title", "")).strip()
+        source = str(item.get("source", "")).strip()
+        if not title:
+            continue
+        snippet = f"[{source}] {title}" if source else title
+        titles.append(snippet)
+        if len(titles) >= limit:
+            break
+    return titles
+
+
+def _list_to_nonempty_strings(value: Any) -> List[str]:
+    if not isinstance(value, list):
+        return []
+    rows: List[str] = []
+    for item in value:
+        text = str(item).strip()
+        if text:
+            rows.append(text)
+    return rows
 
 
 def _try_llm_text(*, ctx: StageContext, task: str, prompt: str, fallback: str) -> str:
@@ -238,23 +323,56 @@ def _build_disclosure_context(ctx: StageContext) -> Dict[str, Any]:
 def _render_title_finalization(ctx: StageContext) -> str:
     t = _topic(ctx)
     sid = _selected_direction_id(ctx)
+    selected = _selected_direction(ctx)
+    selected_title = str(selected.get("title", "")).strip() or f"{t} 方向 {sid}"
+    selected_summary = str(selected.get("summary", "")).strip() or "未提供方向摘要。"
+    selected_score = _safe_float(selected.get("score", 0.0))
+    direction_scores = _load_direction_scores(ctx)
+    candidate_count = len(direction_scores.get("candidates", [])) if isinstance(direction_scores.get("candidates"), list) else len(_direction_candidates(ctx))
+    evidence_titles = _top_evidence_titles(ctx, limit=3)
+    evidence_bullets = _list_to_text(evidence_titles) if evidence_titles else "- 暂无检索证据条目，建议先完成 Stage 02 在线检索。"
+
     return (
-        "# 题目与主保护点确认 (MVP stub)\n\n"
+        "# 题目与主保护点确认\n\n"
+        "## 输入摘要\n"
         f"- 主题: {t}\n"
         f"- 选定方向ID: {sid}\n"
-        "- 题目: 一种面向网络安全协议的混合抗量子实现系统与方法\n"
-        "- 主保护点: 混合协商流程、分层密钥管理、策略驱动实现路径\n"
+        f"- 方向标题: {selected_title}\n"
+        f"- 方向摘要: {selected_summary}\n"
+        f"- 方向评分: {selected_score:.3f}\n"
+        f"- 候选方向总数: {candidate_count}\n\n"
+        "## 推荐题目\n"
+        f"1. 一种{t}的系统及方法\n"
+        f"2. 一种面向{selected_title}的协议协商与密钥管理方法\n"
+        f"3. 一种用于{t}的可验证安全通信平台\n\n"
+        "## 主保护点\n"
+        "1. 混合协商状态机：对算法协商、回退分支和异常状态进行受控编排。\n"
+        "2. 分层密钥管理：将密钥交换、派生、轮换与吊销策略解耦。\n"
+        "3. 策略驱动数据面：以策略编排驱动流量保护、审计与运行期治理。\n\n"
+        "## 选题依据（证据摘要）\n"
+        f"{evidence_bullets}\n"
     )
 
 
 def _render_disclosure_outline(ctx: StageContext) -> str:
+    selected = _selected_direction(ctx)
+    direction_title = str(selected.get("title", "")).strip() or f"{_topic(ctx)} 方向 {_selected_direction_id(ctx)}"
+    direction_summary = str(selected.get("summary", "")).strip() or "待补充"
+    evidence_titles = _top_evidence_titles(ctx, limit=4)
+    evidence_bullets = _list_to_text(evidence_titles) if evidence_titles else "- 待补充检索证据条目。"
     return (
-        "# 技术交底书大纲 (MVP stub)\n\n"
-        "1. 技术领域\n"
-        "2. 背景技术\n"
-        "3. 发明内容\n"
-        "4. 附图说明\n"
-        "5. 具体实施方式\n"
+        "# 技术交底书大纲\n\n"
+        "## 选题定位\n"
+        f"- 方向标题: {direction_title}\n"
+        f"- 方向摘要: {direction_summary}\n\n"
+        "## 章节结构\n"
+        "1. 技术领域：明确适用协议栈、密码体系与工程部署边界。\n"
+        "2. 背景技术：说明现有方案在兼容性、安全性、可运维性上的缺口。\n"
+        "3. 发明内容：给出系统方案、关键模块、接口约束与策略机制。\n"
+        "4. 附图说明：列出架构图、时序图、流程图及其解释要点。\n"
+        "5. 具体实施方式：覆盖初始化、协商、密钥派生、运行治理全流程。\n\n"
+        "## 检索证据锚点\n"
+        f"{evidence_bullets}\n"
     )
 
 
@@ -511,49 +629,122 @@ def _render_diagram_appendix(ctx: StageContext) -> str:
 
 def _render_disclosure_validation_report(ctx: StageContext) -> str:
     t = _topic(ctx)
+    disclosure = _read_text_if_exists(_safe_artifact_source(ctx, "disclosure_draft_path")) or ""
+    slot_rules = [
+        ("技术领域", ["## 技术领域", "## Technical Field"]),
+        ("背景技术", ["## 背景技术", "## Background"]),
+        ("发明内容", ["## 发明内容", "## Summary"]),
+        ("实施方式", ["## 具体实施方式", "## Embodiments"]),
+        ("检索附录", ["附录A 检索报告要点", "Appendix"]),
+    ]
+    missing: List[str] = []
+    for label, options in slot_rules:
+        if not any(opt in disclosure for opt in options):
+            missing.append(label)
+    passed = len(missing) <= 1
+    score = int(((len(slot_rules) - len(missing)) / max(1, len(slot_rules))) * 100)
+    length_hint = len(disclosure.strip())
+    evidence_count = len(_load_prior_art_evidence(ctx))
+    risk_label = "低"
+    if len(missing) >= 2 or length_hint < 1000:
+        risk_label = "中"
+    if len(missing) >= 3 or length_hint < 600:
+        risk_label = "中高"
+    missing_text = _list_to_text(missing) if missing else "- 无"
     return (
-        "# 技术交底书校验报告 (MVP stub)\n\n"
+        "# 技术交底书校验报告\n\n"
+        "## 校验结论\n"
         f"- 主题: {t}\n"
-        "- 结构完整性: 通过\n"
-        "- 必填字段完整性: 通过\n"
-        "- 可专利性链路: 占位评估为中风险\n"
+        f"- 结论: {'通过' if passed else '需补强'}\n"
+        f"- 完整度评分: {score}/100\n"
+        f"- 文档长度(字符): {length_hint}\n"
+        f"- 已关联证据条目: {evidence_count}\n"
+        f"- 可专利性链路风险: {risk_label}\n\n"
+        "## 结构检查\n"
+        f"- 缺失章节:\n{missing_text}\n\n"
+        "## 补强建议\n"
+        "1. 对缺失章节补充明确的技术问题-技术手段-技术效果闭环描述。\n"
+        "2. 对关键主张补充可追溯证据锚点（检索条目或实现路径）。\n"
+        "3. 对实施例增加参数边界、异常分支与可替代实现路径。\n"
     )
 
 
 def _render_claim_strategy(ctx: StageContext) -> str:
+    context = _read_json_if_exists(_safe_artifact_source(ctx, "disclosure_context_path")) or _build_disclosure_context(
+        ctx
+    )
+    claim_points = _list_to_nonempty_strings(context.get("claim_seed_points"))
+    if not claim_points:
+        claim_points = ["混合协商状态机", "分层密钥派生", "策略驱动数据面治理"]
+    evidence_titles = _top_evidence_titles(ctx, limit=5)
+    evidence_bullets = _list_to_text(evidence_titles) if evidence_titles else "- 暂无高质量证据，建议补充在线检索。"
+    points_bullets = _list_to_text(claim_points)
     return (
-        "# 权利要求布局策略 (MVP stub)\n\n"
-        "1. 主权利要求聚焦系统架构约束\n"
-        "2. 从属权利要求覆盖流程细节与参数范围\n"
-        "3. 预留实现变体用于后续迭代补强\n"
+        "# 权利要求布局策略\n\n"
+        "## 独立权利要求主轴\n"
+        "1. 系统主权利要求：限定模块边界、接口关系、策略执行闭环。\n"
+        "2. 方法主权利要求：限定协商-认证-派生-切换的流程约束。\n\n"
+        "## 从属权利要求分层\n"
+        f"{points_bullets}\n\n"
+        "## 抗规避约束\n"
+        "1. 约束协商状态机的关键状态与失败回退路径。\n"
+        "2. 约束密钥派生输入输出关系与生命周期策略。\n"
+        "3. 约束策略下发、执行回执与审计记录的闭环行为。\n\n"
+        "## 证据映射\n"
+        f"{evidence_bullets}\n"
     )
 
 
 def _render_claims_draft(ctx: StageContext) -> str:
+    context = _read_json_if_exists(_safe_artifact_source(ctx, "disclosure_context_path")) or _build_disclosure_context(
+        ctx
+    )
+    claim_points = _list_to_nonempty_strings(context.get("claim_seed_points"))
+    while len(claim_points) < 3:
+        claim_points.append(f"可验证约束点{len(claim_points)+1}")
     fallback = (
-        "# 权利要求书草案 (MVP stub)\n\n"
-        "1. 一种系统，其特征在于包括协商模块、密钥模块与策略模块。\n"
-        "2. 根据权利要求1所述系统，其中协商模块支持多策略切换。\n"
-        "3. 根据权利要求1所述系统，其中密钥模块支持分层派生。\n"
+        "# 权利要求书草案\n\n"
+        f"1. 一种面向{_topic(ctx)}的安全通信系统，其特征在于，"
+        "包括协商控制模块、证书与信任验证模块、密钥管理模块以及策略驱动的数据处理模块；"
+        "所述协商控制模块用于根据能力声明和策略规则驱动握手状态迁移，并在异常场景触发受控回退。\n"
+        f"2. 根据权利要求1所述的系统，其特征在于，所述协商控制模块至少包含“{claim_points[0]}”约束，"
+        "并将该约束与证书验证结果联合判定握手是否继续。\n"
+        f"3. 根据权利要求1所述的系统，其特征在于，所述密钥管理模块至少包含“{claim_points[1]}”约束，"
+        "用于定义派生输入、派生输出和轮换策略之间的映射关系。\n"
+        f"4. 根据权利要求1所述的系统，其特征在于，所述数据处理模块至少包含“{claim_points[2]}”约束，"
+        "用于按策略切换加密参数并输出审计日志。\n"
+        "5. 根据权利要求1至4任一项所述的系统，其特征在于，"
+        "当协商失败、证书校验失败或性能退化时，系统执行预定义分级处置流程并记录证据链。\n"
     )
     prompt = (
         f"主题：{_topic(ctx)}\n"
         f"方向ID：{_selected_direction_id(ctx)}\n"
         "请输出权利要求书草案，至少3条，包含1条独立权利要求与2条从属权利要求。"
     )
-    generated = _try_llm_text(ctx=ctx, task="claims_draft", prompt=prompt, fallback=fallback)
-    return _sanitize_llm_output(task="claims_draft", text=generated)
+    generated = _try_llm_text(ctx=ctx, task="claims_draft", prompt=prompt, fallback="")
+    generated = _sanitize_llm_output(task="claims_draft", text=generated)
+    if generated:
+        if generated.lstrip().startswith("#"):
+            return generated
+        return f"# 权利要求书草案\n\n{generated}"
+    return fallback
 
 
 def _render_spec_draft(ctx: StageContext) -> str:
+    selected = _selected_direction(ctx)
+    direction_summary = str(selected.get("summary", "")).strip() or "围绕核心方向形成系统化实施路径。"
     fallback = (
-        "# 说明书草案 (MVP stub)\n\n"
+        "# 说明书草案\n\n"
         "## 背景技术\n"
-        "现有方案在兼容性与可验证性方面存在不足。\n\n"
+        f"{direction_summary}\n\n"
         "## 发明内容\n"
-        "提出一种分层架构方案，支持工程部署与策略扩展。\n\n"
+        "提出一种分层架构方案，覆盖协商控制、信任验证、密钥治理与数据面执行四类能力，"
+        "通过策略编排形成可验证的工程闭环。\n\n"
+        "## 附图说明\n"
+        "图1为系统总体架构图；图2为握手协商时序图；图3为密钥派生流程图；图4为运行期治理流程图。\n\n"
         "## 具体实施方式\n"
-        "描述控制面与数据面协同的实施流程。\n"
+        "在实施例中，系统先完成能力协商与证书验证，再执行密钥交换与会话切换，"
+        "运行期持续执行策略更新、密钥轮换与审计告警。\n"
     )
     prompt = (
         f"主题：{_topic(ctx)}\n"
@@ -581,36 +772,101 @@ def _render_spec_draft(ctx: StageContext) -> str:
 
 
 def _render_patent_legal_validate(ctx: StageContext) -> str:
+    claims = _read_text_if_exists(_safe_artifact_source(ctx, "claims_draft_path")) or ""
+    spec = _read_text_if_exists(_safe_artifact_source(ctx, "spec_draft_path")) or ""
+    disclosure = _read_text_if_exists(_safe_artifact_source(ctx, "disclosure_draft_path")) or ""
+
+    has_numbered_claims = bool(re.search(r"(?m)^\s*1\.\s*", claims))
+    has_dependent_claims = "根据权利要求" in claims
+    spec_sections_ok = all(
+        key in spec for key in ("## 背景技术", "## 发明内容", "## 具体实施方式")
+    )
+    disclosure_has_appendix = "附录A 检索报告要点" in disclosure
+
+    issues: List[str] = []
+    if not has_numbered_claims:
+        issues.append("权利要求缺少编号结构（至少应包含第1条）。")
+    if not has_dependent_claims:
+        issues.append("权利要求未体现从属层级（建议补充“根据权利要求...”条款）。")
+    if not spec_sections_ok:
+        issues.append("说明书草案缺少关键章节（背景技术/发明内容/具体实施方式）。")
+    if not disclosure_has_appendix:
+        issues.append("交底书缺少检索附录锚点，证据链可追溯性不足。")
+
+    passed = not issues
+    issues_text = _list_to_text(issues) if issues else "- 无阻塞问题。"
     return (
-        "# 法律与格式校验 (MVP stub)\n\n"
-        "- CN 口径格式检查: 通过\n"
-        "- 用语一致性: 通过\n"
-        "- 术语歧义风险: 低\n"
+        "# 法律与格式校验报告\n\n"
+        "## 校验结论\n"
+        f"- 结论: {'通过' if passed else '需修改后复核'}\n"
+        f"- 编号结构检查: {'通过' if has_numbered_claims else '未通过'}\n"
+        f"- 从属层级检查: {'通过' if has_dependent_claims else '未通过'}\n"
+        f"- 说明书章节检查: {'通过' if spec_sections_ok else '未通过'}\n"
+        f"- 证据附录检查: {'通过' if disclosure_has_appendix else '未通过'}\n\n"
+        "## 问题清单\n"
+        f"{issues_text}\n\n"
+        "## 修订建议\n"
+        "1. 优先修复编号与从属关系，确保权利要求结构可审查。\n"
+        "2. 对说明书章节缺口进行补齐，并补充与权利要求的一一映射。\n"
+        "3. 强化附录证据与主张条款的关联关系，提升答复审查意见的准备度。\n"
     )
 
 
 def _render_novelty_risk_report(ctx: StageContext) -> str:
+    selected = _selected_direction(ctx)
+    direction_score = _safe_float(selected.get("score", 0.0), 0.0)
+    evidence = _load_prior_art_evidence(ctx)
+    evidence_count = len(evidence)
+
+    risk_level = "中"
+    if evidence_count < 4:
+        risk_level = "中高"
+    elif direction_score >= 0.7 and evidence_count >= 8:
+        risk_level = "中低"
+
+    overlap_risks = [
+        "流程型特征容易被现有协议实现覆盖。",
+        "接口抽象过宽时，审查中可能被认定为常规工程变体。",
+        "缺少参数约束时，创造性论证力度不足。",
+    ]
     return (
-        "# 新颖性/创造性风险报告 (MVP stub)\n\n"
-        "- 风险等级: 中\n"
-        "- 主要风险点: 现有技术可能覆盖部分流程性特征\n"
-        "- 建议: 强化系统约束与实施细节限定\n"
+        "# 新颖性/创造性风险报告\n\n"
+        "## 风险分级\n"
+        f"- 风险等级: {risk_level}\n"
+        f"- 方向评分: {direction_score:.3f}\n"
+        f"- 证据条目数: {evidence_count}\n\n"
+        "## 主要风险点\n"
+        f"{_list_to_text(overlap_risks)}\n\n"
+        "## 降险策略\n"
+        "1. 在独立权利要求中增加状态机与接口依赖的联合约束。\n"
+        "2. 在从属权利要求中补充参数边界、异常处置和运行期治理条件。\n"
+        "3. 在说明书实施例中补充可验证指标与证据映射表。\n"
     )
 
 
 def _render_oa_response_playbook_draft(ctx: StageContext) -> str:
     t = _topic(ctx)
     sid = _selected_direction_id(ctx)
+    evidence_titles = _top_evidence_titles(ctx, limit=4)
+    evidence_refs = _list_to_text(evidence_titles) if evidence_titles else "- 待补充检索证据条目。"
     fallback = (
-        "# OA 答复剧本 (MVP stub)\n\n"
+        "# OA 答复剧本\n\n"
         f"- 主题: {t}\n"
         f"- 选定方向ID: {sid}\n\n"
-        "## 目标\n"
-        "提供最小可用的答复框架，用于测试导出链路 (stub)。\n\n"
-        "## 模板\n"
-        "1. 识别审查意见类型\n"
-        "2. 选择答复策略\n"
-        "3. 准备对比表与修改说明\n"
+        "## 审查意见类型\n"
+        "1. 新颖性不足：审查员认为关键特征被单一对比文件公开。\n"
+        "2. 创造性不足：审查员认为多个对比文件可直接组合得到方案。\n"
+        "3. 说明书支持不足：权利要求范围超出说明书记载或实施例支持。\n\n"
+        "## 答复策略\n"
+        "1. 构建“技术问题-技术手段-技术效果”三段式论证。\n"
+        "2. 在权利要求中补充关键约束，避免被解释为常规拼接。\n"
+        "3. 用实施例与性能指标增强可实施性与效果证明。\n\n"
+        "## 证据映射\n"
+        f"{evidence_refs}\n\n"
+        "## 修改动作清单\n"
+        "1. 修订独立权利要求：增加系统边界与状态约束。\n"
+        "2. 修订从属权利要求：补充参数范围与异常处理路径。\n"
+        "3. 修订说明书：同步补充附图说明、实施例和证据引用。\n"
     )
     prompt = (
         f"主题：{t}\n方向ID：{sid}\n"

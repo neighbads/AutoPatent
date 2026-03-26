@@ -95,6 +95,35 @@ def test_mvp_outputs_key_artifacts(tmp_path):
     assert "图示与流程图（生成产物）" in spec
 
 
+def test_stage_05_to_14_outputs_are_structured_not_stub(tmp_path):
+    run_pipeline(tmp_path)
+
+    stage05 = (tmp_path / "artifacts/stage_05_title_finalization.md").read_text(encoding="utf-8")
+    stage08 = (tmp_path / "artifacts/disclosure_validation_report.md").read_text(encoding="utf-8")
+    stage09 = (tmp_path / "artifacts/stage_09_claim_strategy.md").read_text(encoding="utf-8")
+    stage12 = (tmp_path / "artifacts/stage_12_legal_validate.md").read_text(encoding="utf-8")
+    stage13 = (tmp_path / "artifacts/novelty_risk_report.md").read_text(encoding="utf-8")
+    stage14 = (tmp_path / "artifacts/stage_14_oa_response_playbook_draft.md").read_text(encoding="utf-8")
+    deliverable_playbook = (tmp_path / "deliverables/oa_response_playbook.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "MVP stub" not in stage05
+    assert "MVP stub" not in stage08
+    assert "MVP stub" not in stage09
+    assert "MVP stub" not in stage12
+    assert "MVP stub" not in stage13
+    assert "MVP stub" not in stage14
+    assert "stub" not in deliverable_playbook.lower()
+
+    assert "推荐题目" in stage05
+    assert "校验结论" in stage08
+    assert "独立权利要求主轴" in stage09
+    assert "法律与格式校验报告" in stage12
+    assert "风险分级" in stage13
+    assert "审查意见类型" in stage14
+
+
 def test_engine_treats_empty_required_value_as_missing(tmp_path):
     class NeedsTopicStage:
         stage_id = "NEEDS_TOPIC"
