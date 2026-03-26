@@ -84,6 +84,8 @@
 2. `supports(query: str, topic: str) -> bool`
 3. `build_requests(query: str, topic: str, limit: int) -> list[RequestSpec]`
 4. `parse_response(payload: str | bytes, request: RequestSpec) -> list[RawHit]`
+5. `fallback_urls(query: str, topic: str, limit: int) -> list[str]`
+6. `parse_fallback(payload: str, url: str, query: str) -> list[RawHit]`
 
 统一数据模型（逻辑字段）：
 
@@ -108,6 +110,7 @@
 
 1. 所有插件返回字段最终必须可映射到现有 `summarize_hits()` 所需字段。
 2. 插件不得直接写文件；文件写出统一由 `PriorArtScanStage` 处理。
+3. `fallback_urls/parse_fallback` 由插件显式提供，避免 fallback 链路接口歧义。
 
 ## 6. 统一执行内核策略
 
@@ -118,6 +121,15 @@
 3. 连续失败超过阈值触发短期熔断（插件级），避免雪崩重试。
 4. 熔断期间插件跳过并记录 `skipped_by_circuit_breaker`。
 5. 插件失败后可选调用 `crawl4ai_runner` 做回退抓取。
+
+## 6.1 执行语义（明确约束）
+
+1. `max_workers` 作用域：**请求级并发**（跨插件、跨 query 的统一请求池并发上限）。
+2. 调度顺序：按 `enabled_plugins` 顺序遍历插件；插件内部按 query 顺序提交请求。
+3. 重试作用域：**单请求级重试**，不重放整个插件或整个 query 批次。
+4. 熔断作用域：**插件级熔断**，一个插件熔断不影响其他插件继续执行。
+5. 熔断复位：达到 `cooldown_sec` 后自动恢复为半开状态，允许一次探测请求。
+6. 结果合并顺序：按插件顺序、query 顺序、rank 升序稳定合并，保证可复现性。
 
 失败处理原则：
 
@@ -134,8 +146,8 @@
 执行规则：
 
 1. 尝试导入 `crawl4ai`；未安装则记录 `fallback_unavailable` 并继续。
-2. 已安装则用插件提供的候选 URL 执行抓取。
-3. 抓取结果仍需走插件或统一解析器转换为 `RawHit`。
+2. 已安装则调用插件的 `fallback_urls(...)` 生成候选 URL，再执行抓取。
+3. 抓取结果由同一插件 `parse_fallback(...)` 转换为 `RawHit`。
 
 安全边界：
 
@@ -158,6 +170,18 @@
 9. `search.plugin_hub.enable_crawl_fallback: bool`
 10. `search.plugin_hub.fallback_tool: "crawl4ai"`
 
+默认值与校验规则：
+
+1. `enabled_plugins` 默认：`["openalex", "arxiv", "semantic_scholar", "crossref", "epo_ops"]`
+2. `max_workers` 默认 `8`，有效范围 `[1, 64]`
+3. `request_timeout_sec` 默认 `20`，有效范围 `[3, 120]`
+4. `retry.max_attempts` 默认 `3`，有效范围 `[1, 6]`
+5. `retry.backoff_base_sec` 默认 `1.0`，有效范围 `(0, 10]`
+6. `circuit_breaker.failure_threshold` 默认 `3`，有效范围 `[1, 20]`
+7. `circuit_breaker.cooldown_sec` 默认 `120`，有效范围 `[10, 3600]`
+8. `fallback_tool` 当前仅支持 `"crawl4ai"`；其他值视为配置错误并在启动时拒绝。
+9. `enabled_plugins` 含未知插件 ID 时：启动失败并给出未知 ID 列表（fail-fast）。
+
 兼容策略：
 
 1. 不提供 `search.plugin_hub` 时走默认值。
@@ -171,6 +195,13 @@
 2. `plugins`: 每插件统计（`success`, `failed`, `skipped`, `fallback_used`）
 3. `circuit_breaker`: 熔断次数与触发插件列表
 4. `errors_sample`: 截断错误样本（避免日志爆炸）
+
+计数口径（避免歧义）：
+
+1. `success`：插件返回至少 1 条 `RawHit` 的请求次数（请求级）。
+2. `failed`：请求最终失败次数（已含重试耗尽，且无 fallback 成功）。
+3. `skipped`：因插件熔断或 `supports=false` 被跳过的请求次数。
+4. `fallback_used`：触发 fallback 且产出至少 1 条 `RawHit` 的请求次数。
 
 `prior_art_evidence.jsonl` 增量字段：
 
@@ -186,6 +217,12 @@
 3. Semantic Scholar（相关性补充）
 4. Crossref（DOI 元数据补齐）
 5. EPO OPS（专利维度补充）
+
+EPO OPS 凭据策略：
+
+1. 使用环境变量：`EPO_OPS_CONSUMER_KEY`、`EPO_OPS_CONSUMER_SECRET`。
+2. 未配置凭据时，`epo_ops_plugin` 自动标记为 `skipped_no_credentials`，不阻断 `STAGE_02`。
+3. CI 验收不要求 EPO 实际联网成功，但要求跳过行为与元数据记录正确。
 
 ## 10.2 第二批（后续）
 
@@ -216,6 +253,8 @@
 2. 首批 5 个插件可独立启停。
 3. `STAGE_02 -> STAGE_03` 链路兼容。
 4. 全量测试通过，不回归现有 `offline/seed-only/online`。
+5. 统计一致性：`success + failed + skipped >= query_count * enabled_plugin_count`（考虑重试后按最终请求结果计数）。
+6. fallback 可观测：当 fallback 开启且直连失败时，`fallback_used > 0` 或 `fallback_unavailable` 明确记录。
 
 ## 12. 风险与缓解
 
