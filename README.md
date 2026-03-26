@@ -171,3 +171,27 @@ mmdc -p /tmp/puppeteer-config.json -i /tmp/quick.mmd -o /tmp/quick.png
 ## 默认模板行为
 
 当命令行未显式提供 `--template` 参数时，CLI 会隐式使用 `cn_invention_default` 模板继续执行，不会中断流程或报错。
+
+## `sansec_disclosure_v1` 模板用法
+
+可通过 `--template sansec_disclosure_v1` 启用 Sansec 交底书模板：
+
+```bash
+python -m autopatent.cli run \
+  --topic "抗量子SSL和证书" \
+  --template sansec_disclosure_v1 \
+  --output /tmp/autopatent-sansec-smoke \
+  --auto-approve
+```
+
+作用范围说明：
+- `sansec_disclosure_v1` 仅影响 disclosure 产物生成（如 `disclosure.md`/`disclosure.docx` 的内容组织）。
+- 不影响 `spec_draft` 与 `claims_draft` 的生成逻辑或输出语义。
+
+模板语义说明：
+- 交底书正文按“技术交底书主体”结构组织。
+- 在交底书中追加“附录A 检索报告要点”（检索报告附录A）。
+
+验收建议（smoke）：
+- 运行上述命令后，检查 `/tmp/autopatent-sansec-smoke/artifacts/disclosure.md` 文件存在。
+- 文件内容应包含标题文本“附录A 检索报告要点”。
