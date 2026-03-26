@@ -88,30 +88,6 @@ def test_disclosure_render_allows_literal_braces_in_context_values() -> None:
     assert "Literal {{ braces }} title" in rendered.markdown
 
 
-def test_sansec_disclosure_template_renders_with_appendix() -> None:
-    from autopatent.templates.renderer import render_disclosure
-
-    context = {
-        "title": "Sansec Search Report for Quantum Firewall",
-        "technical_field": "Post-quantum communication security",
-        "background": "Legacy IPSec stacks fall short against quantum threats.",
-        "summary": "A hybrid TLCP/IPSec architecture that resists lattice attacks.",
-        "embodiments": "Combines AES-256 tunnels with adaptive telemetry.",
-        "embodiments_detail": "Routing stacks include multi-path resilience and failover logic.",
-        "invention_title": "Quantum-Resistant VPN System",
-        "technical_field_cn": "后量子通信安全",
-        "background_art": "RSA-based handshakes are no longer sufficient in the quantum era.",
-        "core_solution": "Integrate TLCP with lattice KEM and zero-trust routing policies.",
-        "technical_effects": "Handshake hardening and entropy amplification for every packet.",
-        "evidence_refs_text": "- e1\n- e2",
-        "claim_seed_points_text": "- claim 1\n- claim 2",
-        "code_evidence_text": "- code/routing.c",
-    }
-
-    rendered = render_disclosure(context=context, template_name="sansec_disclosure_v1")
-
-    assert "附录A 检索报告要点" in rendered.markdown
-    assert "{{" not in rendered.markdown
 
 def test_sansec_disclosure_template_renders_with_appendix() -> None:
     from autopatent.templates.renderer import render_disclosure
