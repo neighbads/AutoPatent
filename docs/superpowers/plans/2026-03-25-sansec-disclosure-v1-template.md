@@ -37,7 +37,7 @@
 - Test: `tests/test_disclosure_render.py`
 - Test: `tests/test_cli_pipeline_execution.py`
 
-- [ ] **Step 1: 在 `test_disclosure_render.py` 添加失败用例（新模板存在且可渲染）**
+- [x] **Step 1: 在 `test_disclosure_render.py` 添加失败用例（新模板存在且可渲染）**
 
 ```python
 def test_sansec_disclosure_template_renders_with_appendix():
@@ -64,12 +64,12 @@ def test_sansec_disclosure_template_renders_with_appendix():
     assert "{{" not in rendered.markdown
 ```
 
-- [ ] **Step 2: 运行单测并确认失败（模板尚未创建）**
+- [x] **Step 2: 运行单测并确认失败（模板尚未创建）**
 
 Run: `PYTHONPATH=. pytest -q tests/test_disclosure_render.py::test_sansec_disclosure_template_renders_with_appendix`  
 Expected: FAIL，报 `Template files not found for: sansec_disclosure_v1`
 
-- [ ] **Step 3: 在 `test_cli_pipeline_execution.py` 添加失败用例（CLI + --template）**
+- [x] **Step 3: 在 `test_cli_pipeline_execution.py` 添加失败用例（CLI + --template）**
 
 ```python
 def test_run_uses_sansec_disclosure_template(tmp_path):
@@ -84,12 +84,12 @@ def test_run_uses_sansec_disclosure_template(tmp_path):
     assert "附录A 检索报告要点" in disclosure
 ```
 
-- [ ] **Step 4: 运行该测试并确认失败**
+- [x] **Step 4: 运行该测试并确认失败**
 
 Run: `PYTHONPATH=. pytest -q tests/test_cli_pipeline_execution.py::test_run_uses_sansec_disclosure_template`  
 Expected: FAIL，无法加载模板或断言未命中
 
-- [ ] **Step 5: 提交测试基线（仅测试）**
+- [x] **Step 5: 提交测试基线（仅测试）**
 
 ```bash
 git add tests/test_disclosure_render.py tests/test_cli_pipeline_execution.py
@@ -107,7 +107,7 @@ git commit -m "test(template): 增加 sansec_disclosure_v1 渲染与CLI用例" -
 - Test: `tests/test_disclosure_render.py`
 - Test: `tests/test_cli_pipeline_execution.py`
 
-- [ ] **Step 1: 在 `stage_05_to_15_stubs.py` 添加列表字段文本化函数**
+- [x] **Step 1: 在 `stage_05_to_15_stubs.py` 添加列表字段文本化函数**
 
 ```python
 def _list_to_text(items: Any, prefix: str = "- ") -> str:
@@ -117,7 +117,7 @@ def _list_to_text(items: Any, prefix: str = "- ") -> str:
     return "\n".join(rows)
 ```
 
-- [ ] **Step 2: 在 `_build_disclosure_context()` 注入文本化字段**
+- [x] **Step 2: 在 `_build_disclosure_context()` 注入文本化字段**
 
 ```python
 "evidence_refs_text": _list_to_text([...]),
@@ -125,7 +125,7 @@ def _list_to_text(items: Any, prefix: str = "- ") -> str:
 "code_evidence_text": _list_to_text([...]),
 ```
 
-- [ ] **Step 3: 创建 `sansec_disclosure_v1.md.j2`（主体 + 附录A）**
+- [x] **Step 3: 创建 `sansec_disclosure_v1.md.j2`（主体 + 附录A）**
 
 ```markdown
 # {{ title }}
@@ -141,12 +141,12 @@ def _list_to_text(items: Any, prefix: str = "- ") -> str:
 {{ code_evidence_text }}
 ```
 
-- [ ] **Step 4: 创建 `sansec_disclosure_v1.docx.j2.md`（与 md 模板一致结构）**
+- [x] **Step 4: 创建 `sansec_disclosure_v1.docx.j2.md`（与 md 模板一致结构）**
 
 Run: 手工复制 `md.j2` 结构并调整 DOCX 友好标题层级  
 Expected: `render_disclosure(...).docx_markdown` 可直接输出
 
-- [ ] **Step 5: 运行新增测试验证通过**
+- [x] **Step 5: 运行新增测试验证通过**
 
 Run:  
 `PYTHONPATH=. pytest -q tests/test_disclosure_render.py::test_sansec_disclosure_template_renders_with_appendix`  
@@ -154,7 +154,7 @@ Run:
 
 Expected: PASS
 
-- [ ] **Step 6: 提交模板实现**
+- [x] **Step 6: 提交模板实现**
 
 ```bash
 git add autopatent/templates/defaults/sansec_disclosure_v1.md.j2 \
@@ -173,19 +173,19 @@ git commit -m "feat(template): 新增 sansec_disclosure_v1 disclosure 模板" -m
 - Modify: `tests/test_cli_pipeline_execution.py` (如需补充断言)
 - Test: `tests/` 全量
 
-- [ ] **Step 1: 更新 README 模板使用说明**
+- [x] **Step 1: 更新 README 模板使用说明**
 
 Add section:
 - `--template sansec_disclosure_v1` 用法
 - 适用范围仅 `disclosure`
 - 源模板语义：技术交底书主体 + 检索报告附录
 
-- [ ] **Step 2: 运行全量测试**
+- [x] **Step 2: 运行全量测试**
 
 Run: `PYTHONPATH=. pytest -q`  
 Expected: All PASS
 
-- [ ] **Step 3: 执行一次本地 smoke 命令**
+- [x] **Step 3: 执行一次本地 smoke 命令**
 
 Run:
 `PYTHONPATH=. python -m autopatent.cli run --topic "抗量子SSL和证书" --template sansec_disclosure_v1 --output /tmp/autopatent-sansec-smoke --auto-approve`
@@ -194,7 +194,7 @@ Expected:
 - `/tmp/autopatent-sansec-smoke/artifacts/disclosure.md` 存在
 - 文本含 `附录A 检索报告要点`
 
-- [ ] **Step 4: 提交文档与收尾变更**
+- [x] **Step 4: 提交文档与收尾变更**
 
 ```bash
 git add README.md tests/test_disclosure_render.py tests/test_cli_pipeline_execution.py
@@ -205,11 +205,11 @@ git commit -m "docs(template): 补充 sansec_disclosure_v1 使用说明与验收
 
 ## Final Verification Checklist
 
-- [ ] `render_disclosure(template_name="sansec_disclosure_v1")` 可渲染
-- [ ] `artifacts/disclosure.md` 包含“附录A 检索报告要点”
-- [ ] `deliverables/disclosure.md` 同步包含附录章节
-- [ ] 默认模板 `cn_invention_default` 相关测试不回归
-- [ ] 全量测试通过
+- [x] `render_disclosure(template_name="sansec_disclosure_v1")` 可渲染
+- [x] `artifacts/disclosure.md` 包含“附录A 检索报告要点”
+- [x] `deliverables/disclosure.md` 同步包含附录章节
+- [x] 默认模板 `cn_invention_default` 相关测试不回归
+- [x] 全量测试通过
 
 ---
 
@@ -218,4 +218,3 @@ git commit -m "docs(template): 补充 sansec_disclosure_v1 使用说明与验收
 1. 严格按 TDD 顺序执行（先测后改）
 2. 每个 Task 独立提交，避免混合提交
 3. 不要提前实现子项目 2（搜索扩展）
-
