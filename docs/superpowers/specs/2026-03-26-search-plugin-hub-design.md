@@ -2,7 +2,7 @@
 
 日期：2026-03-26  
 范围：`STAGE_02 PRIOR_ART_SCAN` 可扩展检索框架升级  
-目标形态：可插拔站点接入 + 统一执行内核 + 可选 crawl 回退
+目标形态：可插拔站点接入 + 统一执行内核 + 多级回退（`r.jina.ai` + crawl）
 
 ## 1. 背景与目标
 
@@ -12,7 +12,7 @@
 
 1. 建立插件目录机制，站点适配能力可独立演进。
 2. 建立统一执行内核，统一处理重试、限流、熔断、降级与观测。
-3. 在站点直连失败时支持可选抓取工具回退（优先预留 `crawl4ai`）。
+3. 在站点直连失败时支持多级回退：优先 `r.jina.ai`，再可选 `crawl4ai`。
 4. 保持现有 provider 行为兼容，不破坏当前 CLI 使用方式。
 
 ## 2. 范围与非目标
@@ -27,7 +27,7 @@
    - `semantic_scholar_plugin`
    - `crossref_plugin`
    - `epo_ops_plugin`
-4. 新增可选回退执行器：`crawl4ai_runner`。
+4. 新增可选回退执行器：`jina_reader_runner`、`crawl4ai_runner`。
 5. 新增配置项：插件启用集、并发、重试、熔断、回退开关。
 6. 新增测试：插件发现、失败降级、输出一致性、兼容性回归。
 
@@ -61,7 +61,8 @@
 6. `plugins/semantic_scholar_plugin.py`
 7. `plugins/crossref_plugin.py`
 8. `plugins/epo_ops_plugin.py`
-9. `fallback/crawl4ai_runner.py`：可选抓取回退执行器。
+9. `fallback/jina_reader_runner.py`：`r.jina.ai` 轻量回退执行器。
+10. `fallback/crawl4ai_runner.py`：浏览器抓取回退执行器（可选依赖）。
 
 ## 4.2 运行时数据流
 
@@ -72,7 +73,7 @@
    - 请求构建
    - 重试与超时控制
    - 熔断判断
-   - 失败时可选 crawl 回退
+   - 失败时按回退链路降级（`r.jina.ai` -> `crawl4ai`）
 5. 输出统一 `RawHit` 列表，交给现有 `deduplicate_hits -> summarize_hits`。
 6. 将插件级观测信息写入 `search_meta.json`。
 
@@ -85,7 +86,7 @@
 3. `build_requests(query: str, topic: str, limit: int) -> list[RequestSpec]`
 4. `parse_response(payload: str | bytes, request: RequestSpec) -> list[RawHit]`
 5. `fallback_urls(query: str, topic: str, limit: int) -> list[str]`
-6. `parse_fallback(payload: str, url: str, query: str) -> list[RawHit]`
+6. `parse_fallback(payload: str, url: str, query: str, source: str) -> list[RawHit]`
 
 统一数据模型（逻辑字段）：
 
@@ -111,6 +112,7 @@
 1. 所有插件返回字段最终必须可映射到现有 `summarize_hits()` 所需字段。
 2. 插件不得直接写文件；文件写出统一由 `PriorArtScanStage` 处理。
 3. `fallback_urls/parse_fallback` 由插件显式提供，避免 fallback 链路接口歧义。
+4. `parse_fallback(..., source)` 中 `source` 用于标记回退来源（`jina_reader` 或 `crawl4ai`）。
 
 ## 6. 统一执行内核策略
 
@@ -120,7 +122,7 @@
 2. 单请求失败后按指数退避重试：`1s -> 2s -> 4s`（可配置）。
 3. 连续失败超过阈值触发短期熔断（插件级），避免雪崩重试。
 4. 熔断期间插件跳过并记录 `skipped_by_circuit_breaker`。
-5. 插件失败后可选调用 `crawl4ai_runner` 做回退抓取。
+5. 插件失败后按顺序调用回退执行器：`jina_reader_runner` -> `crawl4ai_runner`。
 
 ## 6.1 执行语义（明确约束）
 
@@ -136,24 +138,28 @@
 1. 单插件失败不应中断 `STAGE_02`。
 2. 当全部插件失败时仍产出空证据文件与失败原因元数据，供后续阶段判定。
 
-## 7. crawl 回退设计（可选依赖）
+## 7. 回退抓取设计（`r.jina.ai` + crawl4ai）
 
 回退触发条件：
 
 1. 插件直连请求失败（网络错误、HTTP 4xx/5xx、解析失败）。
-2. 配置 `enable_crawl_fallback=true`。
+2. 配置 `enable_fallback=true`。
 
 执行规则：
 
-1. 尝试导入 `crawl4ai`；未安装则记录 `fallback_unavailable` 并继续。
-2. 已安装则调用插件的 `fallback_urls(...)` 生成候选 URL，再执行抓取。
-3. 抓取结果由同一插件 `parse_fallback(...)` 转换为 `RawHit`。
+1. 先执行 `jina_reader_runner`：
+   - 将候选 URL 转换为 `https://r.jina.ai/http://target-url` 或 `https://r.jina.ai/https://target-url`
+   - 获取文本后交由插件 `parse_fallback(..., source="jina_reader")` 转换。
+2. 若 `jina_reader_runner` 失败，再执行 `crawl4ai_runner`：
+   - 尝试导入 `crawl4ai`；未安装则记录 `fallback_unavailable`。
+   - 已安装则抓取页面并交由插件 `parse_fallback(..., source="crawl4ai")` 转换。
+3. 任一回退成功则停止后续回退步骤。
 
 安全边界：
 
 1. 仅允许 HTTP/HTTPS URL。
 2. 单次回退请求限制超时时间与最大内容长度。
-3. 回退结果打标 `via_fallback=true` 用于后续审计。
+3. 回退结果打标 `via_fallback=true` 且记录 `fallback_source` 用于后续审计。
 
 ## 8. 配置设计
 
@@ -167,8 +173,8 @@
 6. `search.plugin_hub.retry.backoff_base_sec: float`
 7. `search.plugin_hub.circuit_breaker.failure_threshold: int`
 8. `search.plugin_hub.circuit_breaker.cooldown_sec: int`
-9. `search.plugin_hub.enable_crawl_fallback: bool`
-10. `search.plugin_hub.fallback_tool: "crawl4ai"`
+9. `search.plugin_hub.enable_fallback: bool`
+10. `search.plugin_hub.fallback_chain: ["jina_reader", "crawl4ai"]`
 
 默认值与校验规则：
 
@@ -179,8 +185,9 @@
 5. `retry.backoff_base_sec` 默认 `1.0`，有效范围 `(0, 10]`
 6. `circuit_breaker.failure_threshold` 默认 `3`，有效范围 `[1, 20]`
 7. `circuit_breaker.cooldown_sec` 默认 `120`，有效范围 `[10, 3600]`
-8. `fallback_tool` 当前仅支持 `"crawl4ai"`；其他值视为配置错误并在启动时拒绝。
-9. `enabled_plugins` 含未知插件 ID 时：启动失败并给出未知 ID 列表（fail-fast）。
+8. `fallback_chain` 默认 `["jina_reader", "crawl4ai"]`；支持值仅 `jina_reader/crawl4ai`。
+9. `fallback_chain` 含未知值时：启动失败并给出未知项列表（fail-fast）。
+10. `enabled_plugins` 含未知插件 ID 时：启动失败并给出未知 ID 列表（fail-fast）。
 
 兼容策略：
 
@@ -195,6 +202,7 @@
 2. `plugins`: 每插件统计（`success`, `failed`, `skipped`, `fallback_used`）
 3. `circuit_breaker`: 熔断次数与触发插件列表
 4. `errors_sample`: 截断错误样本（避免日志爆炸）
+5. `fallback_sources`: 回退来源统计（`jina_reader`, `crawl4ai`, `fallback_unavailable`）
 
 计数口径（避免歧义）：
 
@@ -202,11 +210,13 @@
 2. `failed`：请求最终失败次数（已含重试耗尽，且无 fallback 成功）。
 3. `skipped`：因插件熔断或 `supports=false` 被跳过的请求次数。
 4. `fallback_used`：触发 fallback 且产出至少 1 条 `RawHit` 的请求次数。
+5. `fallback_sources.*`：按请求级统计最终命中的回退来源。
 
 `prior_art_evidence.jsonl` 增量字段：
 
 1. `plugin_id`
 2. `via_fallback`
+3. `fallback_source`
 
 ## 10. 首批插件定义
 
@@ -239,7 +249,7 @@ EPO OPS 凭据策略：
 1. 插件注册与发现。
 2. 插件契约校验（返回字段合法性）。
 3. 内核重试/熔断逻辑。
-4. fallback 可用/不可用分支。
+4. fallback 可用/不可用分支（含 `jina_reader` 与 `crawl4ai` 两级）。
 
 ## 11.2 集成测试
 
@@ -255,6 +265,7 @@ EPO OPS 凭据策略：
 4. 全量测试通过，不回归现有 `offline/seed-only/online`。
 5. 统计一致性：`success + failed + skipped >= query_count * enabled_plugin_count`（考虑重试后按最终请求结果计数）。
 6. fallback 可观测：当 fallback 开启且直连失败时，`fallback_used > 0` 或 `fallback_unavailable` 明确记录。
+7. 当 `fallback_chain` 包含 `jina_reader` 时，`search_meta.json.fallback_sources` 必须包含 `jina_reader` 统计字段（可为 0）。
 
 ## 12. 风险与缓解
 
