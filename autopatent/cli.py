@@ -96,6 +96,7 @@ def run(
         code_dir=code_dir,
         template_name=selected_template,
         search_provider=app_cfg.search_provider,
+        search_runtime=app_cfg.search.to_runtime_mapping(),
         llm_runtime=app_cfg.llm.to_runtime_mapping() if app_cfg.llm else None,
         auto_approve=auto_approve,
     )
@@ -169,6 +170,7 @@ def _initial_metadata(
     code_dir: Optional[Path],
     template_name: str,
     search_provider: str,
+    search_runtime: dict[str, Any],
     llm_runtime: Optional[dict[str, Any]],
     auto_approve: bool,
 ) -> dict[str, Any]:
@@ -178,6 +180,7 @@ def _initial_metadata(
         "code_dir": str(code_dir.expanduser().resolve()) if code_dir else None,
         "template": template_name,
         "search_provider": search_provider,
+        "search": search_runtime,
         "llm": llm_runtime,
     }
     _apply_run_mode(payload, auto_approve=auto_approve)

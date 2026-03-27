@@ -212,3 +212,76 @@ def test_prior_art_scan_rejects_unknown_provider(tmp_path):
         assert "search provider" in str(exc).lower()
     else:
         raise AssertionError("expected ValueError for unknown provider")
+
+
+def test_prior_art_scan_with_plugin_hub_writes_plugin_stats(tmp_path, monkeypatch):
+    class _Provider:
+        name = "plugin-hub"
+        last_meta = {
+            "provider": "plugin-hub",
+            "plugins": {"openalex": {"success": 1, "failed": 0, "skipped": 0, "fallback_used": 0}},
+            "fallback_sources": {"jina_reader": 0, "crawl4ai": 0, "fallback_unavailable": 0},
+            "circuit_breaker": {"trip_count": 0, "plugins": []},
+            "errors_sample": [],
+        }
+
+        def collect(self, *, topic, resources, queries, candidates):
+            _ = topic, resources, queries, candidates
+            return [
+                {
+                    "source": "OPENALEX",
+                    "endpoint": "https://api.openalex.org/works",
+                    "query": "q1",
+                    "title": "Plugin hub test hit",
+                    "rank": 1,
+                    "plugin_id": "openalex",
+                    "via_fallback": False,
+                    "related_direction_ids": ["1"],
+                }
+            ]
+
+    monkeypatch.setattr(
+        "autopatent.pipeline.stages.stage_02_prior_art_scan.get_search_provider",
+        lambda name, plugin_hub_config=None: _Provider(),
+    )
+
+    ctx = StageContext(
+        work_dir=tmp_path,
+        metadata={
+            "topic": "抗量子SSL和证书",
+            "search_provider": "plugin-hub",
+            "search": {
+                "plugin_hub": {
+                    "enabled_plugins": ["openalex"],
+                }
+            },
+            "direction_candidates": [
+                {"id": "1", "title": "方向A", "summary": "s1"},
+            ],
+        },
+    )
+    PriorArtScanStage().run(ctx)
+
+    meta = json.loads((tmp_path / "artifacts" / "search_meta.json").read_text(encoding="utf-8"))
+    assert meta["provider"] == "plugin-hub"
+    assert "plugins" in meta
+    assert "fallback_sources" in meta
+    assert meta["plugins"]["openalex"]["success"] == 1
+
+
+def test_evidence_contains_plugin_and_fallback_fields(tmp_path):
+    ctx = StageContext(
+        work_dir=tmp_path,
+        metadata={
+            "topic": "国密 TLCP / IPSec 混合抗量子方案",
+            "search_provider": "seed-only",
+            "direction_candidates": [
+                {"id": "1", "title": "方向A", "summary": "s1"},
+            ],
+        },
+    )
+    PriorArtScanStage().run(ctx)
+    row = _read_jsonl(tmp_path / "artifacts" / "prior_art_evidence.jsonl")[0]
+    assert "plugin_id" in row
+    assert "via_fallback" in row
+    assert "fallback_source" in row

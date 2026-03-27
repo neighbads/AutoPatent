@@ -52,13 +52,17 @@ class PriorArtScanStage:
         queries = build_queries(topic, candidates)
         queries = _extend_queries_from_seed_artifacts(ctx=ctx, queries=queries)
         provider_name = _resolve_provider_name(ctx)
-        provider = get_search_provider(provider_name)
+        provider = get_search_provider(
+            provider_name,
+            plugin_hub_config=_resolve_plugin_hub_config(ctx),
+        )
         raw_hits = provider.collect(
             topic=topic,
             resources=resources,
             queries=queries,
             candidates=candidates,
         )
+        provider_meta = _extract_provider_meta(provider)
         deduped_hits = deduplicate_hits(raw_hits)
         evidence = summarize_hits(deduped_hits)
 
@@ -72,6 +76,7 @@ class PriorArtScanStage:
             deduped_hits_count=len(deduped_hits),
             evidence_count=len(evidence),
             provider_name=provider.name,
+            provider_meta=provider_meta,
         )
 
         ctx.metadata["prior_art_resources"] = resources
@@ -99,6 +104,23 @@ def _resolve_provider_name(ctx: StageContext) -> str:
     if env_name:
         return env_name
     return "offline"
+
+
+def _resolve_plugin_hub_config(ctx: StageContext) -> Dict[str, Any]:
+    search = ctx.metadata.get("search")
+    if not isinstance(search, dict):
+        return {}
+    plugin_hub = search.get("plugin_hub")
+    if not isinstance(plugin_hub, dict):
+        return {}
+    return dict(plugin_hub)
+
+
+def _extract_provider_meta(provider: Any) -> Dict[str, Any]:
+    payload = getattr(provider, "last_meta", None)
+    if isinstance(payload, dict):
+        return payload
+    return {}
 
 
 def _write_queries(*, work_dir: Path, queries: List[str]) -> Path:
@@ -200,6 +222,7 @@ def _write_search_meta(
     deduped_hits_count: int,
     evidence_count: int,
     provider_name: str,
+    provider_meta: Dict[str, Any],
 ) -> Path:
     payload = {
         "query_count": len(queries),
@@ -209,6 +232,9 @@ def _write_search_meta(
         "evidence_count": evidence_count,
         "provider": provider_name,
     }
+    if provider_meta:
+        payload.update(provider_meta)
+        payload["provider"] = provider_name
     path = work_dir / "artifacts" / "search_meta.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")

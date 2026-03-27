@@ -8,7 +8,8 @@ AutoPatent 是一个面向中国发明专利撰写流程的自动化程序。
 
 本仓库目前仅实现中国发明专利自动化流程的 MVP 版本，聚焦交底书与审查意见预案导出链路，不包含海外制度或法律规则引擎。  
 当前实现重点是“可恢复的阶段化执行框架 + 结构化产物导出 + 关键文档质量门槛”，复杂法律规则引擎与多法域细则仍会在后续迭代补全。
-当前 `STAGE_02` 支持检索 provider 选择：默认 `offline`，可切换 `seed-only` 或 `online`（真实联网检索 OpenAlex + arXiv）。
+当前 `STAGE_02` 支持检索 provider 选择：默认 `offline`，可切换 `seed-only` / `online` / `plugin-hub`。
+`plugin-hub` 为可扩展检索中枢，内置 `openalex/arxiv/semantic_scholar/crossref/epo_ops`，并支持回退链 `r.jina.ai -> crawl4ai`。
 当前 `STAGE_02` 支持通过配置文件 `search_provider` 或环境变量 `AUTOPATENT_SEARCH_PROVIDER` 覆盖 provider。
 当前已支持可选 LLM 生成链路（`STAGE_07/10/11/14`）：未配置 LLM 时自动回退到本地结构化文本。
 当前 LLM 生成文本会经过清洗：自动去除“以下为关于…/如需我继续…”等助手式临时话术，输出面向正式文档。
@@ -54,7 +55,24 @@ python -m autopatent.cli run --topic "示例主题" --output ./artifacts/demo --
 ```json
 {
   "checkpoint_root": "./state",
-  "search_provider": "online",
+  "search_provider": "plugin-hub",
+  "search": {
+    "plugin_hub": {
+      "enabled_plugins": ["openalex", "arxiv", "semantic_scholar", "crossref", "epo_ops"],
+      "max_workers": 8,
+      "request_timeout_sec": 20,
+      "retry": {
+        "max_attempts": 3,
+        "backoff_base_sec": 1.0
+      },
+      "circuit_breaker": {
+        "failure_threshold": 3,
+        "cooldown_sec": 120
+      },
+      "enable_fallback": true,
+      "fallback_chain": ["jina_reader", "crawl4ai"]
+    }
+  },
   "llm": {
     "provider": "openai-compatible",
     "base_url": "http://10.20.35.182:13456/v1",
@@ -71,6 +89,11 @@ python -m autopatent.cli run --topic "示例主题" --output ./artifacts/demo --
 - `offline`：离线伪检索（稳定、无网络依赖）
 - `seed-only`：仅基于输入主题/seed生成最小证据
 - `online`：真实联网检索（OpenAlex + arXiv）
+- `plugin-hub`：插件化检索（OpenAlex/arXiv/S2/Crossref/EPO OPS）+ 回退链（`r.jina.ai`、`crawl4ai`）
+
+`plugin-hub` 额外说明：
+- `enabled_plugins` 与 `fallback_chain` 都是 fail-fast 校验，出现未知项会在启动时报错。
+- `epo_ops` 需要设置环境变量：`EPO_OPS_CONSUMER_KEY` 与 `EPO_OPS_CONSUMER_SECRET`；未设置时会被自动跳过且不阻断流程。
 
 运行方式：
 
@@ -163,6 +186,7 @@ mmdc -p /tmp/puppeteer-config.json -i /tmp/quick.mmd -o /tmp/quick.png
 30. `./artifacts/demo/final_package/`
 31. `./artifacts/demo/artifacts/prior_art_queries.json`
 32. `./artifacts/demo/artifacts/search_meta.json`
+说明：当 `search_provider=plugin-hub` 时，该文件会额外包含 `plugins/circuit_breaker/fallback_sources/errors_sample` 统计字段。
 33. `./artifacts/demo/artifacts/input_doc_digest.md`（当传入 `--input-doc` 时）
 34. `./artifacts/demo/artifacts/code_inventory.json`（当传入 `--code-dir` 时）
 35. `./artifacts/demo/stage_outputs/STAGE_XX/manifest.json`（每阶段输出清单）

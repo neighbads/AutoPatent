@@ -380,7 +380,11 @@ def _arxiv_api_endpoint(endpoint: str) -> str:
     return text
 
 
-def get_search_provider(name: str | None) -> SearchProvider:
+def get_search_provider(
+    name: str | None,
+    *,
+    plugin_hub_config: dict[str, Any] | None = None,
+) -> SearchProvider:
     normalized = str(name or "").strip().lower() or "offline"
     if normalized == "offline":
         return OfflinePseudoProvider()
@@ -388,4 +392,8 @@ def get_search_provider(name: str | None) -> SearchProvider:
         return SeedOnlyProvider()
     if normalized in ("online", "live", "live-web", "network"):
         return OnlineSearchProvider()
+    if normalized in ("plugin-hub", "plugin_hub", "plugins"):
+        from autopatent.search.plugin_hub import PluginHubProvider, PluginHubRuntimeConfig
+
+        return PluginHubProvider(config=PluginHubRuntimeConfig.from_mapping(plugin_hub_config))
     raise ValueError(f"Unknown search provider: {normalized}")

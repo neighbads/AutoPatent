@@ -74,6 +74,17 @@ def test_load_config_parses_llm_and_search_provider(tmp_path):
             {
                 "checkpoint_root": str(tmp_path / "state"),
                 "search_provider": "seed-only",
+                "search": {
+                    "plugin_hub": {
+                        "enabled_plugins": ["openalex", "arxiv"],
+                        "max_workers": 4,
+                        "request_timeout_sec": 12,
+                        "retry": {"max_attempts": 2, "backoff_base_sec": 0.5},
+                        "circuit_breaker": {"failure_threshold": 2, "cooldown_sec": 30},
+                        "enable_fallback": True,
+                        "fallback_chain": ["jina_reader"],
+                    }
+                },
                 "llm": {
                     "provider": "openai-compatible",
                     "base_url": "http://127.0.0.1:8000/v1",
@@ -92,3 +103,5 @@ def test_load_config_parses_llm_and_search_provider(tmp_path):
     assert cfg.llm.base_url == "http://127.0.0.1:8000/v1"
     assert cfg.llm.api_key_env == "OPENAI_API_KEY"
     assert cfg.llm.model == "gpt-5.4"
+    assert cfg.search.plugin_hub.enabled_plugins == ["openalex", "arxiv"]
+    assert cfg.search.plugin_hub.max_workers == 4
